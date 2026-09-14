@@ -93,3 +93,9 @@ create policy "Usuario crea sus cotizaciones" on public.quotations for insert wi
 -- Fase 4: semáforos y dashboard comercial
 alter table public.opportunities add column if not exists next_action_date date;
 create index if not exists opportunities_next_action_date_idx on public.opportunities(next_action_date);
+
+-- Fase 5: visitas múltiples, seguimiento enlazado e inventario con ventas
+alter table public.visits add column if not exists result_options text[] not null default '{}'::text[];
+alter table public.follow_ups add column if not exists opportunity_id uuid references public.opportunities(id) on delete set null;
+create index if not exists follow_ups_opportunity_idx on public.follow_ups(opportunity_id, scheduled_date);
+-- Los estados adicionales y el tipo venta se aplican mediante migration_fase5_flujos_reportes.sql.
