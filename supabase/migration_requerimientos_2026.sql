@@ -20,7 +20,14 @@ alter table public.products add column if not exists brand text;
 alter table public.products add column if not exists purchase_price numeric(12,2) default 0;
 alter table public.products add column if not exists sale_price numeric(12,2) default 0;
 alter table public.products add column if not exists updated_at timestamptz default now();
+alter table public.products add column if not exists image_url text;
 create unique index if not exists products_sku_unique on public.products (sku);
+
+-- Unifica los datos existentes: Nombre + Especificaciones -> Nombre/Descripcion/Especificaciones.
+update public.products
+set name = concat_ws(' — ', nullif(trim(name), ''), nullif(trim(description), '')),
+    description = null
+where nullif(trim(coalesce(description, '')), '') is not null;
 
 -- 4) VISITAS ----------------------------------------------------------------
 alter table public.visits add column if not exists opportunity_detected boolean not null default false;
@@ -101,6 +108,7 @@ select
   p.unit,
   p.purchase_price,
   p.sale_price,
+  p.image_url,
   p.active,
   coalesce(sum(
     case
@@ -112,7 +120,7 @@ select
 from public.products p
 left join public.inventory_movements im on im.product_id = p.id
 group by p.id, p.sku, p.name, p.brand, p.category_id, p.unit,
-         p.purchase_price, p.sale_price, p.active;
+         p.purchase_price, p.sale_price, p.image_url, p.active;
 
 -- 7) COTIZACIONES -----------------------------------------------------------
 create sequence if not exists public.quotation_number_seq;
@@ -269,3 +277,32 @@ create index if not exists visits_customer_date_idx on public.visits(customer_id
 create index if not exists follow_ups_scheduled_idx on public.follow_ups(scheduled_date, completed);
 
 select 'SACIPETROL: migración CRM + inventario + cotizaciones lista' as resultado;
+
+
+-- 11) IMAGENES DE PRODUCTOS (Supabase Storage) ------------------------------
+insert into storage.buckets (id, name, public)
+values ('product-images', 'product-images', true)
+on conflict (id) do update set public = true;
+
+drop policy if exists "Usuarios autenticados ven imagenes de productos" on storage.objects;
+create policy "Usuarios autenticados ven imagenes de productos"
+on storage.objects for select
+using (bucket_id = 'product-images' and auth.uid() is not null);
+
+drop policy if exists "Admin gerente sube imagenes de productos" on storage.objects;
+create policy "Admin gerente sube imagenes de productos"
+on storage.objects for insert
+with check (bucket_id = 'product-images' and public.is_admin_or_gerente());
+
+drop policy if exists "Admin gerente actualiza imagenes de productos" on storage.objects;
+create policy "Admin gerente actualiza imagenes de productos"
+on storage.objects for update
+using (bucket_id = 'product-images' and public.is_admin_or_gerente())
+with check (bucket_id = 'product-images' and public.is_admin_or_gerente());
+
+drop policy if exists "Admin gerente elimina imagenes de productos" on storage.objects;
+create policy "Admin gerente elimina imagenes de productos"
+on storage.objects for delete
+using (bucket_id = 'product-images' and public.is_admin_or_gerente());
+
+select 'SACIPETROL: Fase 1 Productos lista' as resultado;
