@@ -82,3 +82,9 @@ drop policy if exists "Dueño o admin/gerente actualiza seguimiento" on public.f
 
 -- El inventario, cotizaciones y el trigger de seguimiento se agregan en la migración.
 select 'SACIPETROL: esquema inicial idempotente listo' as resultado;
+
+
+-- Fase 2: observaciones en cotizaciones y asignación por admin/gerente
+alter table public.quotations add column if not exists observations text;
+drop policy if exists "Usuario crea sus cotizaciones" on public.quotations;
+create policy "Usuario crea sus cotizaciones" on public.quotations for insert with check(user_id=auth.uid() or public.is_admin_or_gerente());

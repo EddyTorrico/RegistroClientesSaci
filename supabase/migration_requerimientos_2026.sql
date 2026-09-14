@@ -136,6 +136,7 @@ create table if not exists public.quotations (
   valid_until date,
   delivery_time text,
   payment_terms text,
+  observations text,
   status text not null default 'borrador' check (
     status in ('borrador','emitida','enviada','aceptada','rechazada','vencida')
   ),
@@ -159,7 +160,7 @@ using (user_id = auth.uid() or public.is_admin_or_gerente());
 drop policy if exists "Usuario crea sus cotizaciones" on public.quotations;
 create policy "Usuario crea sus cotizaciones"
 on public.quotations for insert
-with check (user_id = auth.uid());
+with check (user_id = auth.uid() or public.is_admin_or_gerente());
 
 drop policy if exists "Dueño o admin gerente edita cotización" on public.quotations;
 create policy "Dueño o admin gerente edita cotización"
