@@ -1,124 +1,39 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { TrendingUp, Building2, CalendarClock, ChevronRight } from "lucide-react";
+import { TrendingUp, Building2, CalendarClock, ChevronRight, AlertTriangle, Target, CircleDollarSign, CheckCircle2 } from "lucide-react";
 
-function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={`bg-white rounded-2xl p-5 ${className}`} style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06), 0 1px 12px rgba(15,38,71,0.04)" }}>
-      {children}
-    </div>
-  );
-}
+function Card({ children, className = "" }: { children: React.ReactNode; className?: string }) { return <div className={`bg-white rounded-2xl p-5 ${className}`} style={{ boxShadow: "0 1px 12px rgba(15,38,71,0.05)" }}>{children}</div>; }
+function StatCard({ icon: Icon, label, value, tint, onClick }: { icon:any; label:string; value:string|number; tint:string; onClick?:()=>void }) { return <button onClick={onClick} className="text-left w-full"><Card className="flex items-center gap-4 h-full"><div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{backgroundColor:tint+"1A",color:tint}}><Icon size={20}/></div><div><div className="text-2xl font-semibold text-[#0F2647]">{value}</div><div className="text-xs text-[#5B6670]">{label}</div></div></Card></button>; }
+const money = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+function hoyISO(){const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
+function sumarDiasISO(n:number){const d=new Date();d.setHours(12,0,0,0);d.setDate(d.getDate()+n);return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`}
+function fechaBO(f:string){const [y,m,d]=f.split("-").map(Number);return new Date(y,m-1,d,12).toLocaleDateString("es-BO")}
+function semFollow(s:any){if(s.completed)return "verde";if(s.scheduled_date<hoyISO())return "rojo";if(s.scheduled_date<=sumarDiasISO(3))return "amarillo";return "gris"}
 
-function StatCard({ icon: Icon, label, value, tint }: { icon: any; label: string; value: number; tint: string }) {
-  return (
-    <Card className="flex items-center gap-4">
-      <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style={{ backgroundColor: tint + "1A", color: tint }}>
-        <Icon size={20} />
-      </div>
-      <div>
-        <div className="text-2xl font-semibold text-[#0F2647]">{value}</div>
-        <div className="text-xs text-[#5B6670]">{label}</div>
-      </div>
-    </Card>
-  );
-}
-
-export function Dashboard() {
-  const { profile } = useAuth();
-  const navigate = useNavigate();
-  const esVendedor = profile?.role === "vendedor";
-
-  const [visitasHoy, setVisitasHoy] = useState(0);
-  const [totalClientes, setTotalClientes] = useState(0);
-  const [seguimientos, setSeguimientos] = useState<any[]>([]);
-  const [equipo, setEquipo] = useState<{ full_name: string; visitas: number }[]>([]);
-
-  useEffect(() => {
-    if (!profile) return;
-    cargarDatos();
-  }, [profile]);
-
-  async function cargarDatos() {
-    const hoyInicio = new Date();
-    hoyInicio.setHours(0, 0, 0, 0);
-
-    let visitasQuery = supabase.from("visits").select("id, user_id").gte("visit_date", hoyInicio.toISOString());
-    if (esVendedor) visitasQuery = visitasQuery.eq("user_id", profile!.id);
-    const { data: visitas } = await visitasQuery;
-    setVisitasHoy(visitas?.length ?? 0);
-
-    const { count } = await supabase.from("customers").select("id", { count: "exact", head: true });
-    setTotalClientes(count ?? 0);
-
-    let followQuery = supabase
-      .from("follow_ups")
-      .select("id, customer_id, type, scheduled_date, user_id, completed, customers(name)")
-      .eq("completed", false)
-      .order("scheduled_date", { ascending: true })
-      .limit(10);
-    if (esVendedor) followQuery = followQuery.eq("user_id", profile!.id);
-    const { data: follows } = await followQuery;
-    setSeguimientos(follows ?? []);
-
-    if (!esVendedor && visitas) {
-      const { data: perfiles } = await supabase.from("profiles").select("id, full_name");
-      const conteo: Record<string, number> = {};
-      visitas.forEach((v: any) => {
-        conteo[v.user_id] = (conteo[v.user_id] ?? 0) + 1;
-      });
-      setEquipo((perfiles ?? []).map((p: any) => ({ full_name: p.full_name, visitas: conteo[p.id] ?? 0 })));
-    }
+export function Dashboard(){
+  const {profile}=useAuth(); const navigate=useNavigate(); const esVendedor=profile?.role==="vendedor";
+  const [visitasHoy,setVisitasHoy]=useState(0); const [totalClientes,setTotalClientes]=useState(0); const [seguimientos,setSeguimientos]=useState<any[]>([]); const [oportunidades,setOportunidades]=useState<any[]>([]); const [equipo,setEquipo]=useState<any[]>([]);
+  useEffect(()=>{if(profile)cargarDatos()},[profile]);
+  async function cargarDatos(){
+    const hoyInicio=new Date();hoyInicio.setHours(0,0,0,0);
+    let visitasQuery=supabase.from("visits").select("id,user_id").gte("visit_date",hoyInicio.toISOString()); if(esVendedor)visitasQuery=visitasQuery.eq("user_id",profile!.id); const {data:visitas}=await visitasQuery; setVisitasHoy(visitas?.length??0);
+    const {count}=await supabase.from("customers").select("id",{count:"exact",head:true}); setTotalClientes(count??0);
+    let fq=supabase.from("follow_ups").select("id,customer_id,type,scheduled_date,user_id,completed,customers(name),profiles(full_name)").order("scheduled_date",{ascending:true}); if(esVendedor)fq=fq.eq("user_id",profile!.id); const {data:follows}=await fq; setSeguimientos(follows??[]);
+    let oq=supabase.from("opportunities").select("id,customer_id,user_id,title,valor_estimado,probabilidad,estado,next_action_date,customers(name),profiles(full_name)"); if(esVendedor)oq=oq.eq("user_id",profile!.id); const {data:ops}=await oq; setOportunidades(ops??[]);
+    if(!esVendedor&&visitas){const {data:perfiles}=await supabase.from("profiles").select("id,full_name");const conteo:Record<string,number>={};visitas.forEach((v:any)=>conteo[v.user_id]=(conteo[v.user_id]??0)+1);setEquipo((perfiles??[]).map((p:any)=>({id:p.id,full_name:p.full_name,visitas:conteo[p.id]??0})));}
   }
-
-  return (
-    <Layout title={`Hola, ${profile?.full_name ?? ""} 👋`} subtitle="Esto es lo que tienes hoy">
-      <div className="space-y-6">
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard icon={TrendingUp} label={esVendedor ? "Mis visitas hoy" : "Visitas del equipo hoy"} value={visitasHoy} tint="#1B3A6B" />
-          <StatCard icon={Building2} label="Clientes registrados" value={totalClientes} tint="#5B6670" />
-          <StatCard icon={CalendarClock} label="Seguimientos pendientes" value={seguimientos.length} tint="#B8863B" />
-        </div>
-
-        {!esVendedor && equipo.length > 0 && (
-          <Card>
-            <div className="text-sm font-semibold mb-3 text-[#0F2647]">Resumen por vendedor</div>
-            <div className="space-y-2">
-              {equipo.map((v) => (
-                <div key={v.full_name} className="flex items-center justify-between px-3 py-2.5 rounded-xl bg-[#EEF0F2]">
-                  <span className="text-sm font-medium text-[#0F2647]">{v.full_name}</span>
-                  <span className="text-xs text-[#5B6670]">{v.visitas} visitas hoy</span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        )}
-
-        <Card>
-          <div className="text-sm font-semibold mb-3 text-[#0F2647]">Próximas acciones</div>
-          <div className="space-y-2">
-            {seguimientos.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => navigate(`/clientes/${s.customer_id}`)}
-                className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left hover:bg-[#F5F6F8] border border-[#ECEEF1]"
-              >
-                <div>
-                  <div className="text-sm font-medium text-[#0F2647]">{s.customers?.name}</div>
-                  <div className="text-xs text-[#5B6670]">
-                    {s.type} · {new Date(s.scheduled_date).toLocaleDateString("es-BO")}
-                  </div>
-                </div>
-                <ChevronRight size={16} className="text-[#5B6670]" />
-              </button>
-            ))}
-            {seguimientos.length === 0 && <div className="text-sm italic text-[#5B6670]">Sin seguimientos pendientes.</div>}
-          </div>
-        </Card>
-      </div>
-    </Layout>
-  );
+  const pendientes=seguimientos.filter(s=>!s.completed); const vencidos=pendientes.filter(s=>semFollow(s)==="rojo"); const proximos=pendientes.filter(s=>semFollow(s)==="amarillo"); const abiertas=oportunidades.filter(o=>!["ganada","perdida"].includes(o.estado)); const ganadas=oportunidades.filter(o=>o.estado==="ganada"); const pipeline=abiertas.reduce((a,o)=>a+Number(o.valor_estimado||0),0);
+  const equipoComercial=useMemo(()=>equipo.map((v:any)=>{const ops=oportunidades.filter(o=>o.user_id===v.id);const fus=seguimientos.filter(s=>s.user_id===v.id&&!s.completed);return {...v,oportunidades:ops.filter(o=>!["ganada","perdida"].includes(o.estado)).length,seguimientos:fus.length,vencidos:fus.filter(s=>semFollow(s)==="rojo").length}}),[equipo,oportunidades,seguimientos]);
+  return <Layout title={`Hola, ${profile?.full_name??""} 👋`} subtitle="Panel comercial y prioridades del día"><div className="space-y-6">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-4"><StatCard icon={TrendingUp} label={esVendedor?"Mis visitas hoy":"Visitas del equipo hoy"} value={visitasHoy} tint="#1B3A6B"/><StatCard icon={Target} label="Oportunidades abiertas" value={abiertas.length} tint="#6B5E9B" onClick={()=>navigate("/oportunidades")}/><StatCard icon={CircleDollarSign} label="Pipeline estimado Bs" value={money.format(pipeline)} tint="#3E7A56" onClick={()=>navigate("/oportunidades")}/><StatCard icon={AlertTriangle} label="Seguimientos vencidos" value={vencidos.length} tint="#C0564F" onClick={()=>navigate("/seguimientos")}/></div>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3"><Small label="Clientes registrados" value={totalClientes} icon={Building2}/><Small label="Próximos 3 días" value={proximos.length} icon={CalendarClock}/><Small label="Oportunidades ganadas" value={ganadas.length} icon={CheckCircle2}/><Small label="Seguimientos pendientes" value={pendientes.length} icon={CalendarClock}/></div>
+    {vencidos.length>0&&<Card><div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold text-[#9F3F39]">🔴 Atención inmediata · {vencidos.length} seguimiento(s) vencido(s)</div><button onClick={()=>navigate("/seguimientos")} className="text-xs text-[#1B3A6B]">Ver todos</button></div><div className="space-y-2">{vencidos.slice(0,5).map(s=><Action key={s.id} s={s} navigate={navigate} tone="red"/>)}</div></Card>}
+    {!esVendedor&&equipoComercial.length>0&&<Card><div className="text-sm font-semibold mb-3 text-[#0F2647]">Resumen comercial por vendedor</div><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-xs text-[#5B6670] border-b"><th className="py-2">Vendedor</th><th className="py-2 text-center">Visitas hoy</th><th className="py-2 text-center">Oportunidades</th><th className="py-2 text-center">Pendientes</th><th className="py-2 text-center">Vencidos</th></tr></thead><tbody>{equipoComercial.map(v=><tr key={v.id} className="border-b last:border-0"><td className="py-3 font-medium text-[#0F2647]">{v.full_name}</td><td className="text-center">{v.visitas}</td><td className="text-center">{v.oportunidades}</td><td className="text-center">{v.seguimientos}</td><td className="text-center font-semibold" style={{color:v.vencidos?"#C0564F":"#3E7A56"}}>{v.vencidos}</td></tr>)}</tbody></table></div></Card>}
+    <Card><div className="flex items-center justify-between mb-3"><div className="text-sm font-semibold text-[#0F2647]">Próximas acciones</div><button onClick={()=>navigate("/seguimientos")} className="text-xs text-[#1B3A6B]">Ver seguimientos</button></div><div className="space-y-2">{pendientes.filter(s=>semFollow(s)!=="rojo").slice(0,10).map(s=><Action key={s.id} s={s} navigate={navigate} tone={semFollow(s)==="amarillo"?"yellow":"normal"}/>)}{pendientes.length===0&&<div className="text-sm italic text-[#5B6670]">Sin seguimientos pendientes.</div>}</div></Card>
+  </div></Layout>
 }
+function Small({label,value,icon:Icon}:{label:string;value:number;icon:any}){return <div className="bg-white rounded-xl p-3 flex items-center gap-3 border border-[#ECEEF1]"><Icon size={16} className="text-[#5B6670]"/><div><div className="font-semibold text-[#0F2647]">{value}</div><div className="text-[11px] text-[#5B6670]">{label}</div></div></div>}
+function Action({s,navigate,tone}:{s:any;navigate:any;tone:"red"|"yellow"|"normal"}){const bg=tone==="red"?"#FBEDEC":tone==="yellow"?"#FFF6DF":"#F8F9FA";return <button onClick={()=>navigate(`/clientes/${s.customer_id}`)} className="w-full flex items-center justify-between px-3.5 py-3 rounded-xl text-left border border-[#ECEEF1]" style={{backgroundColor:bg}}><div><div className="text-sm font-medium text-[#0F2647]">{s.customers?.name}</div><div className="text-xs text-[#5B6670]">{s.type} · {fechaBO(s.scheduled_date)}{s.profiles?.full_name?` · ${s.profiles.full_name}`:""}</div></div><ChevronRight size={16} className="text-[#5B6670]"/></button>}
