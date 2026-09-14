@@ -99,3 +99,6 @@ alter table public.visits add column if not exists result_options text[] not nul
 alter table public.follow_ups add column if not exists opportunity_id uuid references public.opportunities(id) on delete set null;
 create index if not exists follow_ups_opportunity_idx on public.follow_ups(opportunity_id, scheduled_date);
 -- Los estados adicionales y el tipo venta se aplican mediante migration_fase5_flujos_reportes.sql.
+
+-- Fase 7: Ventas
+-- Para bases existentes ejecutar supabase/migration_fase7_ventas.sql.
