@@ -8,6 +8,7 @@ const emptyForm = {
   sku: "",
   name: "",
   brand: "",
+  group_id: "",
   category_id: "",
   unit: "unidad",
   purchase_price: "",
@@ -59,7 +60,9 @@ export function Productos() {
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [movementOpen, setMovementOpen] = useState(false);
   const [categoryOpen, setCategoryOpen] = useState(false);
-  const [newCategory, setNewCategory] = useState("");
+  const [newGroup, setNewGroup] = useState("");
+  const [newSubgroup, setNewSubgroup] = useState("");
+  const [subgroupParentId, setSubgroupParentId] = useState("");
   const [historyProduct, setHistoryProduct] = useState<any>(null);
   const [movements, setMovements] = useState<any[]>([]);
   const [allMovements, setAllMovements] = useState<any[]>([]);
@@ -76,11 +79,11 @@ export function Productos() {
   const canEdit = profile?.role !== "vendedor";
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (section === "inventory") loadInventory(); }, [section]);
+  useEffect(() => { if (section === "inventory") loadInventory(); }, [section, invPeriod, invDate]);
 
   async function load() {
     const [{ data: cats }, { data: prods, error: pe }] = await Promise.all([
-      supabase.from("categories").select("id,name").order("name"),
+      supabase.from("categories").select("id,name,parent_id").order("name"),
       supabase.from("product_inventory").select("*").order("name"),
     ]);
     if (pe) setError(pe.message);
@@ -88,11 +91,39 @@ export function Productos() {
     setProducts(prods ?? []);
   }
 
+  function inventoryRange() {
+    const now = new Date();
+    let start: Date;
+    let end: Date;
+
+    if (invPeriod === "day") {
+      const [y, m, d] = invDate.split("-").map(Number);
+      start = new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+      end = new Date(y, (m || 1) - 1, (d || 1) + 1, 0, 0, 0, 0);
+    } else if (invPeriod === "month") {
+      const [y, m] = invDate.split("-").map(Number);
+      start = new Date(y || now.getFullYear(), (m || 1) - 1, 1, 0, 0, 0, 0);
+      end = new Date(y || now.getFullYear(), m || 1, 1, 0, 0, 0, 0);
+    } else {
+      const y = Number(invDate) || now.getFullYear();
+      start = new Date(y, 0, 1, 0, 0, 0, 0);
+      end = new Date(y + 1, 0, 1, 0, 0, 0, 0);
+    }
+
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
   async function loadInventory() {
     setInventoryLoading(true);
     setError("");
+    const { start, end } = inventoryRange();
     const [mResult, uResult] = await Promise.all([
-      supabase.from("inventory_movements").select("id,product_id,movement_type,quantity,reference,notes,created_by,created_at").order("created_at", { ascending: false }),
+      supabase
+        .from("inventory_movements")
+        .select("id,product_id,movement_type,quantity,reference,notes,created_by,created_at")
+        .gte("created_at", start)
+        .lt("created_at", end)
+        .order("created_at", { ascending: false }),
       supabase.from("profiles").select("id,full_name").order("full_name"),
     ]);
     if (mResult.error) setError(mResult.error.message);
@@ -112,11 +143,13 @@ export function Productos() {
   function editProduct(product: any) {
     setError("");
     setEditingProduct(product);
+    const currentCategory = categories.find(c => c.id === product.category_id);
     setForm({
       sku: product.sku ?? "",
       name: product.name ?? "",
       brand: product.brand ?? "",
-      category_id: product.category_id ?? "",
+      group_id: currentCategory?.parent_id ? currentCategory.parent_id : (currentCategory?.id ?? ""),
+      category_id: currentCategory?.parent_id ? currentCategory.id : "",
       unit: product.unit ?? "unidad",
       purchase_price: String(product.purchase_price ?? ""),
       sale_price: String(product.sale_price ?? ""),
@@ -140,19 +173,47 @@ export function Productos() {
     return data.publicUrl;
   }
 
-  async function addCategory() {
-    const name = newCategory.trim();
+  const groups = useMemo(() => categories.filter(c => !c.parent_id), [categories]);
+  const subgroupsForForm = useMemo(() => categories.filter(c => c.parent_id === form.group_id), [categories, form.group_id]);
+
+  function categoryPath(categoryId: string | null | undefined) {
+    if (!categoryId) return "Sin categoría";
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return "Sin categoría";
+    if (!category.parent_id) return category.name;
+    const parent = categories.find(c => c.id === category.parent_id);
+    return parent ? `${parent.name} / ${category.name}` : category.name;
+  }
+
+  async function addGroup() {
+    const name = newGroup.trim();
     if (!name) return;
     setError("");
-    const { data, error } = await supabase.from("categories").insert({ name }).select("id,name").single();
+    const { data, error } = await supabase.from("categories").insert({ name, parent_id: null }).select("id,name,parent_id").single();
     if (error) return setError(error.message);
     setCategories(prev => [...prev, data].sort((a,b) => a.name.localeCompare(b.name)));
-    setForm(prev => ({ ...prev, category_id: data.id }));
-    setNewCategory("");
+    setForm(prev => ({ ...prev, group_id: data.id, category_id: "" }));
+    setSubgroupParentId(data.id);
+    setNewGroup("");
+  }
+
+  async function addSubgroup() {
+    const name = newSubgroup.trim();
+    if (!name || !subgroupParentId) {
+      setError("Selecciona un grupo e ingresa el nombre del subgrupo.");
+      return;
+    }
+    setError("");
+    const { data, error } = await supabase.from("categories").insert({ name, parent_id: subgroupParentId }).select("id,name,parent_id").single();
+    if (error) return setError(error.message);
+    setCategories(prev => [...prev, data].sort((a,b) => a.name.localeCompare(b.name)));
+    setForm(prev => prev.group_id === subgroupParentId ? { ...prev, category_id: data.id } : prev);
+    setNewSubgroup("");
   }
 
   async function renameCategory(c: any) {
-    const name = window.prompt("Nuevo nombre de la categoría", c.name)?.trim();
+    const type = c.parent_id ? "subgrupo" : "grupo";
+    const name = window.prompt(`Nuevo nombre del ${type}`, c.name)?.trim();
     if (!name || name === c.name) return;
     const { error } = await supabase.from("categories").update({ name }).eq("id", c.id);
     if (error) return setError(error.message);
@@ -160,10 +221,15 @@ export function Productos() {
   }
 
   async function deleteCategory(c: any) {
-    if (!window.confirm(`¿Eliminar la categoría ${c.name}? Los productos quedarán sin categoría.`)) return;
+    if (!c.parent_id && categories.some(x => x.parent_id === c.id)) {
+      setError("No se puede eliminar un grupo que todavía tiene subgrupos. Elimina o reasigna primero sus subgrupos.");
+      return;
+    }
+    const type = c.parent_id ? "subgrupo" : "grupo";
+    if (!window.confirm(`¿Eliminar el ${type} ${c.name}? Los productos asociados quedarán sin esa clasificación.`)) return;
     const { error } = await supabase.from("categories").delete().eq("id", c.id);
     if (error) return setError(error.message);
-    if (form.category_id === c.id) setForm(prev => ({ ...prev, category_id: "" }));
+    if (form.category_id === c.id || form.group_id === c.id) setForm(prev => ({ ...prev, group_id: "", category_id: "" }));
     await load();
   }
 
@@ -181,7 +247,7 @@ export function Productos() {
         name: form.name.trim(),
         description: null,
         brand: form.brand.trim() || null,
-        category_id: form.category_id || null,
+        category_id: form.category_id || form.group_id || null,
         unit: form.unit.trim() || "unidad",
         purchase_price: Number(form.purchase_price) || 0,
         sale_price: Number(form.sale_price) || 0,
@@ -275,20 +341,12 @@ export function Productos() {
 
   const filteredInventoryMovements = useMemo(() => {
     const needle = invSearch.trim().toLowerCase();
-    const [refYear, refMonth, refDay] = invDate.split("-").map(Number);
     return allMovements.filter(m => {
-      const d = new Date(m.created_at);
-      const inPeriod = invPeriod === "day"
-        ? d.getFullYear() === refYear && (d.getMonth() + 1) === refMonth && d.getDate() === refDay
-        : invPeriod === "month"
-          ? d.getFullYear() === refYear && (d.getMonth() + 1) === refMonth
-          : d.getFullYear() === refYear;
-      if (!inPeriod) return false;
       const p = products.find(x => x.product_id === m.product_id);
       const text = `${p?.sku || ""} ${p?.name || ""} ${movementLabel(m.movement_type)} ${m.reference || ""} ${m.notes || ""}`.toLowerCase();
       return !needle || text.includes(needle);
     });
-  }, [allMovements, products, invDate, invPeriod, invSearch]);
+  }, [allMovements, products, invSearch]);
 
   const inventoryTotals = useMemo(() => {
     const totals: Record<string, number> = { inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0 };
@@ -343,7 +401,7 @@ export function Productos() {
                 <td className="font-mono text-xs">{p.sku}</td>
                 <td className="font-medium text-[#0F2647]">{p.name}</td>
                 <td>{p.brand || "—"}</td>
-                <td>{categories.find(c => c.id === p.category_id)?.name || "Sin categoría"}</td>
+                <td>{categoryPath(p.category_id)}</td>
                 <td className="text-right whitespace-nowrap">Bs {money(p.sale_price)}</td>
                 <td className="text-right"><span className={`font-semibold ${Number(p.stock) <= 0 ? "text-red-600" : Number(p.stock) <= 5 ? "text-amber-600" : "text-[#3E7A56]"}`}>{fmt(p.stock)} {p.unit || ""}</span></td>
                 {canEdit && <td><div className="flex gap-3">
@@ -363,7 +421,7 @@ export function Productos() {
           <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
             <div className="flex-1">
               <div className="text-sm font-semibold text-[#0F2647]">Resumen de movimientos</div>
-              <div className="text-xs text-[#5B6670]">Consulta ventas, entradas, salidas, diferencias y ajustes por día, mes o año.</div>
+              <div className="text-xs text-[#5B6670]">Se cargan exclusivamente los movimientos comprendidos en el periodo seleccionado. El buscador filtra únicamente dentro de ese periodo.</div>
             </div>
             <label className="text-xs text-[#5B6670]">Periodo
               <select value={invPeriod} onChange={e => { const next = e.target.value as any; setInvPeriod(next); const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const day = String(d.getDate()).padStart(2,"0"); setInvDate(next === "day" ? `${y}-${m}-${day}` : next === "month" ? `${y}-${m}` : `${y}`); }} className="block border rounded-xl px-3 py-2.5 bg-white text-sm mt-1 min-w-36">
@@ -423,7 +481,10 @@ export function Productos() {
           <label className="block text-xs text-[#5B6670]">Nombre / Descripción / Especificaciones<textarea value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} rows={5} className="w-full border rounded-xl p-2.5 mt-1 text-sm"/></label>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Marca" value={form.brand} onChange={v => setForm({ ...form, brand: v })}/>
-            <label className="block text-xs text-[#5B6670]">Categoría<div className="flex gap-1 mt-1"><select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="w-full border rounded-xl p-2.5 text-sm"><option value="">Sin categoría</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>{canEdit && <button type="button" title="Administrar categorías" onClick={() => setCategoryOpen(true)} className="px-3 rounded-xl border text-[#1B3A6B]"><Tags size={16}/></button>}</div></label>
+            <div className="space-y-2">
+              <label className="block text-xs text-[#5B6670]">Grupo<div className="flex gap-1 mt-1"><select value={form.group_id} onChange={e => setForm({ ...form, group_id: e.target.value, category_id: "" })} className="w-full border rounded-xl p-2.5 text-sm"><option value="">Sin grupo</option>{groups.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>{canEdit && <button type="button" title="Administrar grupos y subgrupos" onClick={() => { setSubgroupParentId(form.group_id || groups[0]?.id || ""); setCategoryOpen(true); }} className="px-3 rounded-xl border text-[#1B3A6B]"><Tags size={16}/></button>}</div></label>
+              <label className="block text-xs text-[#5B6670]">Subgrupo<select disabled={!form.group_id} value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm disabled:bg-gray-100"><option value="">Sin subgrupo</option>{subgroupsForForm.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Unidad" value={form.unit} onChange={v => setForm({ ...form, unit: v })}/>
@@ -440,7 +501,29 @@ export function Productos() {
 
       {movementOpen && <Modal title="Movimiento de stock" onClose={() => setMovementOpen(false)}><div className="space-y-3"><label className="block text-xs text-[#5B6670]">Tipo<select value={mov.movement_type} onChange={e => setMov({ ...mov, movement_type: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="venta">Venta</option><option value="ajuste_entrada">Ajuste entrada</option><option value="ajuste_salida">Ajuste salida</option></select></label><Field label="Cantidad" type="number" value={mov.quantity} onChange={v => setMov({ ...mov, quantity: v })}/><Field label="Referencia" value={mov.reference} onChange={v => setMov({ ...mov, reference: v })}/><Field label="Observaciones" value={mov.notes} onChange={v => setMov({ ...mov, notes: v })}/><button disabled={saving} onClick={saveMovement} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar movimiento"}</button></div></Modal>}
 
-      {categoryOpen && <Modal title="Administrar categorías" onClose={() => setCategoryOpen(false)}><div className="space-y-3"><div className="flex gap-2"><input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="Nueva categoría" className="flex-1 border rounded-xl p-2.5 text-sm"/><button onClick={addCategory} className="px-4 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear</button></div><div className="max-h-72 overflow-auto divide-y">{categories.map(c => <div key={c.id} className="flex items-center justify-between py-2"><span className="text-sm">{c.name}</span><div className="flex gap-2"><button onClick={() => renameCategory(c)} className="p-2 border rounded-lg text-[#1B3A6B]" title="Renombrar"><Pencil size={14}/></button><button onClick={() => deleteCategory(c)} className="p-2 border rounded-lg text-red-600" title="Eliminar"><Trash2 size={14}/></button></div></div>)}</div></div></Modal>}
+      {categoryOpen && <Modal title="Administrar grupos y subgrupos" onClose={() => setCategoryOpen(false)}>
+        <div className="space-y-5">
+          <div className="border rounded-xl p-3">
+            <div className="text-sm font-semibold text-[#0F2647] mb-2">Crear grupo</div>
+            <div className="flex gap-2"><input value={newGroup} onChange={e => setNewGroup(e.target.value)} placeholder="Ej.: Automatización" className="flex-1 border rounded-xl p-2.5 text-sm"/><button onClick={addGroup} className="px-4 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear grupo</button></div>
+          </div>
+          <div className="border rounded-xl p-3">
+            <div className="text-sm font-semibold text-[#0F2647] mb-2">Crear subgrupo</div>
+            <div className="grid sm:grid-cols-[1fr_1fr_auto] gap-2">
+              <select value={subgroupParentId} onChange={e => setSubgroupParentId(e.target.value)} className="border rounded-xl p-2.5 text-sm"><option value="">Seleccionar grupo</option>{groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}</select>
+              <input value={newSubgroup} onChange={e => setNewSubgroup(e.target.value)} placeholder="Ej.: Interruptores WiFi" className="border rounded-xl p-2.5 text-sm"/>
+              <button onClick={addSubgroup} className="px-4 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear subgrupo</button>
+            </div>
+          </div>
+          <div className="max-h-80 overflow-auto space-y-3">
+            {groups.map(g => <div key={g.id} className="border rounded-xl p-3">
+              <div className="flex items-center justify-between gap-2"><span className="font-semibold text-sm">{g.name}</span><div className="flex gap-2"><button onClick={() => renameCategory(g)} className="p-2 border rounded-lg text-[#1B3A6B]" title="Renombrar grupo"><Pencil size={14}/></button><button onClick={() => deleteCategory(g)} className="p-2 border rounded-lg text-red-600" title="Eliminar grupo"><Trash2 size={14}/></button></div></div>
+              <div className="mt-2 pl-3 border-l space-y-1">{categories.filter(c => c.parent_id === g.id).map(sg => <div key={sg.id} className="flex items-center justify-between py-1"><span className="text-sm text-[#5B6670]">{sg.name}</span><div className="flex gap-2"><button onClick={() => renameCategory(sg)} className="p-1.5 border rounded-lg text-[#1B3A6B]" title="Renombrar subgrupo"><Pencil size={13}/></button><button onClick={() => deleteCategory(sg)} className="p-1.5 border rounded-lg text-red-600" title="Eliminar subgrupo"><Trash2 size={13}/></button></div></div>)}{categories.filter(c => c.parent_id === g.id).length === 0 && <div className="text-xs italic text-[#5B6670] py-1">Sin subgrupos</div>}</div>
+            </div>)}
+            {groups.length === 0 && <div className="text-sm italic text-[#5B6670]">Todavía no existen grupos.</div>}
+          </div>
+        </div>
+      </Modal>}
 
       {historyProduct && <Modal title={`Historial — ${historyProduct.sku}`} onClose={() => setHistoryProduct(null)}><div className="mb-3 text-sm font-medium">{historyProduct.name}<div className="text-xs text-[#5B6670]">Stock actual: {fmt(historyProduct.stock)} {historyProduct.unit || ""}</div></div><div className="max-h-80 overflow-auto space-y-2">{movements.map(m => <div key={m.id} className="border rounded-xl p-3 text-sm"><div className="flex justify-between"><b>{movementLabel(m.movement_type)}</b><span>{fmt(m.quantity)}</span></div><div className="text-xs text-[#5B6670]">{new Date(m.created_at).toLocaleString("es-BO")}{m.reference ? ` · ${m.reference}` : ""}</div>{m.notes && <div className="text-xs mt-1">{m.notes}</div>}</div>)}{movements.length === 0 && <div className="text-sm italic text-[#5B6670]">Sin movimientos.</div>}</div></Modal>}
     </div>
