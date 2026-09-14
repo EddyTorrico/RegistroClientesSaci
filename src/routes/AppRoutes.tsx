@@ -10,6 +10,7 @@ import { Mapa } from "../pages/Mapa";
 import { AdminUsuarios } from "../pages/AdminUsuarios";
 import { Cotizaciones } from "../pages/Cotizaciones";
 import { Productos } from "../pages/Productos";
+import { Ventas } from "../pages/Ventas";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 
 export function AppRoutes() {
@@ -24,6 +25,7 @@ export function AppRoutes() {
       <Route path="/seguimientos" element={<ProtectedRoute><Seguimientos /></ProtectedRoute>} />
       <Route path="/productos" element={<ProtectedRoute><Productos /></ProtectedRoute>} />
       <Route path="/cotizaciones" element={<ProtectedRoute><Cotizaciones /></ProtectedRoute>} />
+      <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
       <Route path="/mapa" element={<ProtectedRoute><Mapa /></ProtectedRoute>} />
       <Route path="/admin/usuarios" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsuarios /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />

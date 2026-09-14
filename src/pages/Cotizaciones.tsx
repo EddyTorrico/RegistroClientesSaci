@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText } from "lucide-react";
+import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText, ShoppingBag } from "lucide-react";
 
 const COMPANY = {
   name: "SACIPETROL S.R.L.",
@@ -39,6 +40,7 @@ function formatDate(value?: string | null) {
 
 export function Cotizaciones() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
@@ -311,6 +313,7 @@ export function Cotizaciones() {
                     <td><div className="flex justify-end gap-2">
                       <button disabled={loadingView} title="Ver cotización" onClick={() => viewQuotation(q)} className="p-2 rounded-lg border text-[#1B3A6B]"><Eye size={15}/></button>
                       <button disabled={loadingView} title="Imprimir cotización" onClick={() => viewQuotation(q, true)} className="p-2 rounded-lg border text-[#1B3A6B]"><Printer size={15}/></button>
+                      <button title="Convertir a venta" onClick={() => navigate(`/ventas?quotation=${q.id}`)} className="p-2 rounded-lg border text-[#1B3A6B]"><ShoppingBag size={15}/></button>
                     </div></td>
                   </tr>;
                 })}
@@ -367,6 +370,7 @@ export function Cotizaciones() {
 
           <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
             <button onClick={() => setScreen("list")} className="px-5 py-2.5 rounded-xl border bg-white text-[#0F2647]">Volver a cotizaciones</button>
+            <button onClick={() => navigate(`/ventas?quotation=${saved.id}`)} className="px-5 py-2.5 rounded-xl border bg-white text-[#1B3A6B]"><ShoppingBag size={16} className="inline mr-2"/>Convertir a venta</button>
             <button onClick={() => window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / Guardar PDF</button>
           </div>
         </div>
