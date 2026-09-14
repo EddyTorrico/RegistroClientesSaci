@@ -28,7 +28,7 @@ export function Layout({ children, title, subtitle }: { children: ReactNode; tit
 
   return (
     <div className="min-h-screen w-full flex" style={{ backgroundColor: "#F5F6F8" }}>
-      <aside className="w-60 shrink-0 text-white flex flex-col" style={{ backgroundColor: "#0F2647" }}>
+      <aside className="w-60 shrink-0 text-white flex flex-col print:hidden" style={{ backgroundColor: "#0F2647" }}>
         <div className="px-5 py-6 border-b border-white/10 flex items-center gap-2.5">
           <div className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm bg-[#1B3A6B] text-white">
             SP
@@ -86,13 +86,13 @@ export function Layout({ children, title, subtitle }: { children: ReactNode; tit
       </aside>
 
       <main className="flex-1 flex flex-col min-w-0">
-        <header className="flex items-center justify-between px-8 py-4 border-b bg-white" style={{ borderColor: "#E2E5EA" }}>
+        <header className="flex items-center justify-between px-8 py-4 border-b bg-white print:hidden" style={{ borderColor: "#E2E5EA" }}>
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-[#0F2647]">{title}</h1>
             {subtitle && <p className="text-sm text-[#5B6670]">{subtitle}</p>}
           </div>
         </header>
-        <div className="flex-1 overflow-y-auto px-8 py-6">{children}</div>
+        <div className="flex-1 overflow-y-auto px-8 py-6 print:p-0">{children}</div>
       </main>
     </div>
   );
