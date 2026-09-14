@@ -64,7 +64,7 @@ drop policy if exists "Precios visibles por todos" on public.product_prices; cre
 drop policy if exists "Solo admin/gerente gestiona precios" on public.product_prices; create policy "Solo admin/gerente gestiona precios" on public.product_prices for all using(public.is_admin_or_gerente()) with check(public.is_admin_or_gerente());
 
 create table if not exists public.visits(id uuid primary key default gen_random_uuid(),customer_id uuid references public.customers(id) on delete cascade,user_id uuid references public.profiles(id),visit_date timestamptz not null default now(),latitude double precision,longitude double precision,address text,zone text,photo_url text,provider_name text,provider_reasons text[],needs text[],need_description text,purchase_timing text,estimated_amount numeric(12,2),interest_level text check(interest_level in('Bajo','Medio','Alto')),result text,opportunity_detected boolean not null default false,opportunity_id uuid,next_action_type text,next_action_date date,next_action_note text); alter table public.visits enable row level security;
-create table if not exists public.opportunities(id uuid primary key default gen_random_uuid(),customer_id uuid references public.customers(id) on delete cascade,user_id uuid references public.profiles(id),title text not null,valor_estimado numeric(12,2) not null default 0,probabilidad integer not null default 0 check(probabilidad between 0 and 100),estado text not null default 'detectada' check(estado in('detectada','en_negociacion','ganada','perdida')),created_at timestamptz not null default now()); alter table public.opportunities enable row level security;
+create table if not exists public.opportunities(id uuid primary key default gen_random_uuid(),customer_id uuid references public.customers(id) on delete cascade,user_id uuid references public.profiles(id),title text not null,valor_estimado numeric(12,2) not null default 0,probabilidad integer not null default 0 check(probabilidad between 0 and 100),estado text not null default 'detectada' check(estado in('detectada','en_negociacion','ganada','perdida')),next_action_date date,created_at timestamptz not null default now()); alter table public.opportunities enable row level security;
 alter table public.visits add constraint visits_opportunity_fk foreign key(opportunity_id) references public.opportunities(id) on delete set null;
 
 drop policy if exists "Visitas visibles por dueño o admin/gerente" on public.visits; create policy "Visitas visibles por dueño o admin/gerente" on public.visits for select using(user_id=auth.uid() or public.is_admin_or_gerente());
@@ -88,3 +88,8 @@ select 'SACIPETROL: esquema inicial idempotente listo' as resultado;
 alter table public.quotations add column if not exists observations text;
 drop policy if exists "Usuario crea sus cotizaciones" on public.quotations;
 create policy "Usuario crea sus cotizaciones" on public.quotations for insert with check(user_id=auth.uid() or public.is_admin_or_gerente());
+
+
+-- Fase 4: semáforos y dashboard comercial
+alter table public.opportunities add column if not exists next_action_date date;
+create index if not exists opportunities_next_action_date_idx on public.opportunities(next_action_date);
