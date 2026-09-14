@@ -307,3 +307,8 @@ on storage.objects for delete
 using (bucket_id = 'product-images' and public.is_admin_or_gerente());
 
 select 'SACIPETROL: Fase 1 Productos lista' as resultado;
+
+-- 12) FASE 3: SNAPSHOT COMERCIAL EN COTIZACIONES ----------------------------
+alter table public.quotations add column if not exists customer_address text;
+alter table public.quotation_items add column if not exists brand text;
+alter table public.quotation_items add column if not exists unit text;
