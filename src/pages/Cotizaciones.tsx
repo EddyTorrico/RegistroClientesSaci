@@ -50,6 +50,7 @@ export function Cotizaciones() {
   const [quoteSearch, setQuoteSearch] = useState("");
   const [valid, setValid] = useState("15");
   const [delivery, setDelivery] = useState("Inmediata");
+  const [deliveryPreset, setDeliveryPreset] = useState("Inmediata");
   const [payment, setPayment] = useState("Contado");
   const [discount, setDiscount] = useState("0");
   const [observations, setObservations] = useState("");
@@ -103,6 +104,7 @@ export function Cotizaciones() {
     setSearch("");
     setValid("15");
     setDelivery("Inmediata");
+    setDeliveryPreset("Inmediata");
     setPayment("Contado");
     setDiscount("0");
     setObservations("");
@@ -249,6 +251,7 @@ export function Cotizaciones() {
       setCustomer(q.customer_id);
       setSellerId(q.user_id);
       setDelivery(q.delivery_time || "—");
+      setDeliveryPreset(["Inmediata","5 días","10 días","15 días"].includes(q.delivery_time) ? q.delivery_time : "Personalizada");
       setPayment(q.payment_terms || "—");
       setDiscount(String(q.discount ?? 0));
       setObservations(q.observations || "");
@@ -441,8 +444,8 @@ export function Cotizaciones() {
 
             <div className="grid md:grid-cols-3 gap-2 mt-4">
               <label className="text-xs text-[#5B6670]">Validez (días)<input type="number" min="0" value={valid} onChange={e => setValid(e.target.value)} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
-              <label className="text-xs text-[#5B6670]">Tiempo de entrega<input value={delivery} onChange={e => setDelivery(e.target.value)} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
-              <label className="text-xs text-[#5B6670]">Forma de pago<input value={payment} onChange={e => setPayment(e.target.value)} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
+              <label className="text-xs text-[#5B6670]">Tiempo de entrega<select value={deliveryPreset} onChange={e => { const v=e.target.value; setDeliveryPreset(v); if(v!=="Personalizada") setDelivery(v); else setDelivery(""); }} className="w-full border rounded-lg p-2 text-sm mt-1"><option>Inmediata</option><option>5 días</option><option>10 días</option><option>15 días</option><option value="Personalizada">Personalizada</option></select>{deliveryPreset === "Personalizada" && <input value={delivery} onChange={e => setDelivery(e.target.value)} placeholder="Ej.: 20 días hábiles" className="w-full border rounded-lg p-2 text-sm mt-2"/>}</label>
+              <label className="text-xs text-[#5B6670]">Forma de pago<select value={payment} onChange={e => setPayment(e.target.value)} className="w-full border rounded-lg p-2 text-sm mt-1"><option value="Contado">Contado</option><option value="Crédito">Crédito</option></select></label>
             </div>
 
             <label className="block text-xs text-[#5B6670] mt-3">Descuento general (Bs)<input type="number" min="0" step="0.01" value={discount} onChange={e => setDiscount(e.target.value)} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>

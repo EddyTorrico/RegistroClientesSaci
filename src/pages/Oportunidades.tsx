@@ -8,6 +8,8 @@ import { CalendarClock, CircleDollarSign, Search } from "lucide-react";
 const ESTADOS = [
   { key: "detectada", label: "Detectada", color: "#5B6670" },
   { key: "en_negociacion", label: "En negociación", color: "#B8863B" },
+  { key: "atendida", label: "Atendida", color: "#3E7A56" },
+  { key: "cerrada", label: "Cerrada", color: "#2F6846" },
   { key: "ganada", label: "Ganada", color: "#3E7A56" },
   { key: "perdida", label: "Perdida", color: "#C0564F" },
 ];
@@ -33,7 +35,7 @@ function sumarDiasISO(dias: number) {
 }
 
 function semaforo(o: any) {
-  if (o.estado === "ganada" || o.estado === "perdida") {
+  if (["atendida", "cerrada", "ganada", "perdida"].includes(o.estado)) {
     return { key: "verde", label: "Atendida / cerrada", dot: "#3E7A56", bg: "#EAF4EE", text: "#2F6846" };
   }
   if (!o.next_action_date) return { key: "gris", label: "Sin fecha", dot: "#8A929A", bg: "#F1F3F5", text: "#5B6670" };
@@ -88,7 +90,7 @@ export function Oportunidades() {
   const resumen = useMemo(() => ({
     vencidas: oportunidades.filter((o) => semaforo(o).key === "rojo").length,
     proximas: oportunidades.filter((o) => semaforo(o).key === "amarillo").length,
-    abiertas: oportunidades.filter((o) => !["ganada", "perdida"].includes(o.estado)).length,
+    abiertas: oportunidades.filter((o) => !["atendida", "cerrada", "ganada", "perdida"].includes(o.estado)).length,
     pipeline: oportunidades.filter((o) => !["perdida"].includes(o.estado)).reduce((a, o) => a + Number(o.valor_estimado || 0), 0),
   }), [oportunidades]);
 

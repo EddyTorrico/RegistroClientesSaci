@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Plus, Search, PackagePlus, ImagePlus, X, History, Pencil, Boxes, BarChart3 } from "lucide-react";
+import { Plus, Search, PackagePlus, ImagePlus, X, History, Pencil, Boxes, BarChart3, Tags, Trash2 } from "lucide-react";
 
 const emptyForm = {
   sku: "",
@@ -37,6 +37,7 @@ function movementLabel(type: string) {
     inicial: "Saldo inicial",
     entrada: "Entrada",
     salida: "Salida",
+    venta: "Venta",
     ajuste_entrada: "Ajuste entrada",
     ajuste_salida: "Ajuste salida",
   };
@@ -57,12 +58,14 @@ export function Productos() {
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [movementOpen, setMovementOpen] = useState(false);
+  const [categoryOpen, setCategoryOpen] = useState(false);
+  const [newCategory, setNewCategory] = useState("");
   const [historyProduct, setHistoryProduct] = useState<any>(null);
   const [movements, setMovements] = useState<any[]>([]);
   const [allMovements, setAllMovements] = useState<any[]>([]);
   const [movementUsers, setMovementUsers] = useState<any[]>([]);
   const [invPeriod, setInvPeriod] = useState<"day" | "month" | "year">("month");
-  const [invDate, setInvDate] = useState(todayIso());
+  const [invDate, setInvDate] = useState(todayIso().slice(0, 7));
   const [invSearch, setInvSearch] = useState("");
   const [inventoryLoading, setInventoryLoading] = useState(false);
   const [form, setForm] = useState(emptyForm);
@@ -135,6 +138,33 @@ export function Productos() {
     if (ue) throw ue;
     const { data } = supabase.storage.from("product-images").getPublicUrl(path);
     return data.publicUrl;
+  }
+
+  async function addCategory() {
+    const name = newCategory.trim();
+    if (!name) return;
+    setError("");
+    const { data, error } = await supabase.from("categories").insert({ name }).select("id,name").single();
+    if (error) return setError(error.message);
+    setCategories(prev => [...prev, data].sort((a,b) => a.name.localeCompare(b.name)));
+    setForm(prev => ({ ...prev, category_id: data.id }));
+    setNewCategory("");
+  }
+
+  async function renameCategory(c: any) {
+    const name = window.prompt("Nuevo nombre de la categoría", c.name)?.trim();
+    if (!name || name === c.name) return;
+    const { error } = await supabase.from("categories").update({ name }).eq("id", c.id);
+    if (error) return setError(error.message);
+    await load();
+  }
+
+  async function deleteCategory(c: any) {
+    if (!window.confirm(`¿Eliminar la categoría ${c.name}? Los productos quedarán sin categoría.`)) return;
+    const { error } = await supabase.from("categories").delete().eq("id", c.id);
+    if (error) return setError(error.message);
+    if (form.category_id === c.id) setForm(prev => ({ ...prev, category_id: "" }));
+    await load();
   }
 
   async function saveProduct() {
@@ -244,15 +274,15 @@ export function Productos() {
   }), [products, q, categoryId]);
 
   const filteredInventoryMovements = useMemo(() => {
-    const selected = new Date(`${invDate}T00:00:00`);
     const needle = invSearch.trim().toLowerCase();
+    const [refYear, refMonth, refDay] = invDate.split("-").map(Number);
     return allMovements.filter(m => {
       const d = new Date(m.created_at);
       const inPeriod = invPeriod === "day"
-        ? d.getFullYear() === selected.getFullYear() && d.getMonth() === selected.getMonth() && d.getDate() === selected.getDate()
+        ? d.getFullYear() === refYear && (d.getMonth() + 1) === refMonth && d.getDate() === refDay
         : invPeriod === "month"
-          ? d.getFullYear() === selected.getFullYear() && d.getMonth() === selected.getMonth()
-          : d.getFullYear() === selected.getFullYear();
+          ? d.getFullYear() === refYear && (d.getMonth() + 1) === refMonth
+          : d.getFullYear() === refYear;
       if (!inPeriod) return false;
       const p = products.find(x => x.product_id === m.product_id);
       const text = `${p?.sku || ""} ${p?.name || ""} ${movementLabel(m.movement_type)} ${m.reference || ""} ${m.notes || ""}`.toLowerCase();
@@ -261,10 +291,11 @@ export function Productos() {
   }, [allMovements, products, invDate, invPeriod, invSearch]);
 
   const inventoryTotals = useMemo(() => {
-    const totals: Record<string, number> = { inicial: 0, entrada: 0, salida: 0, ajuste_entrada: 0, ajuste_salida: 0 };
+    const totals: Record<string, number> = { inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0 };
     filteredInventoryMovements.forEach(m => { totals[m.movement_type] = (totals[m.movement_type] || 0) + Number(m.quantity || 0); });
-    const net = totals.inicial + totals.entrada + totals.ajuste_entrada - totals.salida - totals.ajuste_salida;
-    return { ...totals, net };
+    const diferencia = totals.ajuste_entrada - totals.ajuste_salida;
+    const net = totals.inicial + totals.entrada + totals.ajuste_entrada - totals.salida - totals.venta - totals.ajuste_salida;
+    return { ...totals, diferencia, net };
   }, [filteredInventoryMovements]);
 
   const inventoryByProduct = useMemo(() => {
@@ -272,9 +303,10 @@ export function Productos() {
     filteredInventoryMovements.forEach(m => {
       const p = products.find(x => x.product_id === m.product_id);
       const key = m.product_id;
-      if (!map.has(key)) map.set(key, { product_id: key, sku: p?.sku || "—", name: p?.name || "Producto", inicial: 0, entrada: 0, salida: 0, ajuste_entrada: 0, ajuste_salida: 0, net: 0 });
+      if (!map.has(key)) map.set(key, { product_id: key, sku: p?.sku || "—", name: p?.name || "Producto", inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0, diferencia: 0, net: 0 });
       const row = map.get(key);
       row[m.movement_type] += Number(m.quantity || 0);
+      row.diferencia = row.ajuste_entrada - row.ajuste_salida;
       row.net += movementSign(m.movement_type) * Number(m.quantity || 0);
     });
     return Array.from(map.values()).sort((a, b) => a.sku.localeCompare(b.sku));
@@ -331,15 +363,15 @@ export function Productos() {
           <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
             <div className="flex-1">
               <div className="text-sm font-semibold text-[#0F2647]">Resumen de movimientos</div>
-              <div className="text-xs text-[#5B6670]">Consulta entradas, salidas y ajustes por día, mes o año.</div>
+              <div className="text-xs text-[#5B6670]">Consulta ventas, entradas, salidas, diferencias y ajustes por día, mes o año.</div>
             </div>
             <label className="text-xs text-[#5B6670]">Periodo
-              <select value={invPeriod} onChange={e => setInvPeriod(e.target.value as any)} className="block border rounded-xl px-3 py-2.5 bg-white text-sm mt-1 min-w-36">
+              <select value={invPeriod} onChange={e => { const next = e.target.value as any; setInvPeriod(next); const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const day = String(d.getDate()).padStart(2,"0"); setInvDate(next === "day" ? `${y}-${m}-${day}` : next === "month" ? `${y}-${m}` : `${y}`); }} className="block border rounded-xl px-3 py-2.5 bg-white text-sm mt-1 min-w-36">
                 <option value="day">Día</option><option value="month">Mes</option><option value="year">Año</option>
               </select>
             </label>
             <label className="text-xs text-[#5B6670]">Fecha de referencia
-              <input type="date" value={invDate} onChange={e => setInvDate(e.target.value)} className="block border rounded-xl px-3 py-2 bg-white text-sm mt-1"/>
+              <input type={invPeriod === "day" ? "date" : invPeriod === "month" ? "month" : "number"} min={invPeriod === "year" ? "2000" : undefined} max={invPeriod === "year" ? "2100" : undefined} value={invDate} onChange={e => setInvDate(e.target.value)} className="block border rounded-xl px-3 py-2 bg-white text-sm mt-1"/>
             </label>
             <div className="relative lg:w-80">
               <Search size={15} className="absolute left-3 bottom-3 text-[#5B6670]"/>
@@ -348,21 +380,23 @@ export function Productos() {
           </div>
         </div>
 
-        <div className="grid sm:grid-cols-2 xl:grid-cols-6 gap-3">
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
           <SummaryCard label="Saldo inicial" value={inventoryTotals.inicial} />
           <SummaryCard label="Entradas" value={inventoryTotals.entrada} />
+          <SummaryCard label="Ventas" value={inventoryTotals.venta} />
           <SummaryCard label="Salidas" value={inventoryTotals.salida} />
           <SummaryCard label="Ajuste entrada" value={inventoryTotals.ajuste_entrada} />
           <SummaryCard label="Ajuste salida" value={inventoryTotals.ajuste_salida} />
+          <SummaryCard label="Diferencia ajustes" value={inventoryTotals.diferencia} />
           <SummaryCard label="Movimiento neto" value={inventoryTotals.net} strong />
         </div>
 
         <div className="bg-white rounded-2xl p-5 overflow-x-auto">
           <div className="font-semibold text-sm mb-3">Resumen por producto</div>
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Producto</th><th className="text-right">Inicial</th><th className="text-right">Entradas</th><th className="text-right">Salidas</th><th className="text-right">Aj. entrada</th><th className="text-right">Aj. salida</th><th className="text-right">Neto periodo</th></tr></thead>
-            <tbody>{inventoryByProduct.map(r => <tr key={r.product_id} className="border-b"><td className="py-2 font-mono text-xs">{r.sku}</td><td>{r.name}</td><td className="text-right">{fmt(r.inicial)}</td><td className="text-right">{fmt(r.entrada)}</td><td className="text-right">{fmt(r.salida)}</td><td className="text-right">{fmt(r.ajuste_entrada)}</td><td className="text-right">{fmt(r.ajuste_salida)}</td><td className={`text-right font-semibold ${r.net < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.net)}</td></tr>)}
-            {inventoryByProduct.length === 0 && <tr><td colSpan={8} className="py-8 text-center italic text-[#5B6670]">Sin movimientos para el periodo seleccionado.</td></tr>}</tbody>
+            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Producto</th><th className="text-right">Inicial</th><th className="text-right">Entradas</th><th className="text-right">Ventas</th><th className="text-right">Salidas</th><th className="text-right">Aj. entrada</th><th className="text-right">Aj. salida</th><th className="text-right">Diferencia</th><th className="text-right">Neto periodo</th></tr></thead>
+            <tbody>{inventoryByProduct.map(r => <tr key={r.product_id} className="border-b"><td className="py-2 font-mono text-xs">{r.sku}</td><td>{r.name}</td><td className="text-right">{fmt(r.inicial)}</td><td className="text-right">{fmt(r.entrada)}</td><td className="text-right">{fmt(r.venta)}</td><td className="text-right">{fmt(r.salida)}</td><td className="text-right">{fmt(r.ajuste_entrada)}</td><td className="text-right">{fmt(r.ajuste_salida)}</td><td className={`text-right font-semibold ${r.diferencia < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.diferencia)}</td><td className={`text-right font-semibold ${r.net < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.net)}</td></tr>)}
+            {inventoryByProduct.length === 0 && <tr><td colSpan={10} className="py-8 text-center italic text-[#5B6670]">Sin movimientos para el periodo seleccionado.</td></tr>}</tbody>
           </table>
         </div>
 
@@ -389,7 +423,7 @@ export function Productos() {
           <label className="block text-xs text-[#5B6670]">Nombre / Descripción / Especificaciones<textarea value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} rows={5} className="w-full border rounded-xl p-2.5 mt-1 text-sm"/></label>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Marca" value={form.brand} onChange={v => setForm({ ...form, brand: v })}/>
-            <label className="block text-xs text-[#5B6670]">Categoría<select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Sin categoría</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="block text-xs text-[#5B6670]">Categoría<div className="flex gap-1 mt-1"><select value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="w-full border rounded-xl p-2.5 text-sm"><option value="">Sin categoría</option>{categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>{canEdit && <button type="button" title="Administrar categorías" onClick={() => setCategoryOpen(true)} className="px-3 rounded-xl border text-[#1B3A6B]"><Tags size={16}/></button>}</div></label>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <Field label="Unidad" value={form.unit} onChange={v => setForm({ ...form, unit: v })}/>
@@ -404,7 +438,9 @@ export function Productos() {
         </div>
       </Modal>}
 
-      {movementOpen && <Modal title="Movimiento de stock" onClose={() => setMovementOpen(false)}><div className="space-y-3"><label className="block text-xs text-[#5B6670]">Tipo<select value={mov.movement_type} onChange={e => setMov({ ...mov, movement_type: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="ajuste_entrada">Ajuste entrada</option><option value="ajuste_salida">Ajuste salida</option></select></label><Field label="Cantidad" type="number" value={mov.quantity} onChange={v => setMov({ ...mov, quantity: v })}/><Field label="Referencia" value={mov.reference} onChange={v => setMov({ ...mov, reference: v })}/><Field label="Observaciones" value={mov.notes} onChange={v => setMov({ ...mov, notes: v })}/><button disabled={saving} onClick={saveMovement} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar movimiento"}</button></div></Modal>}
+      {movementOpen && <Modal title="Movimiento de stock" onClose={() => setMovementOpen(false)}><div className="space-y-3"><label className="block text-xs text-[#5B6670]">Tipo<select value={mov.movement_type} onChange={e => setMov({ ...mov, movement_type: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="entrada">Entrada</option><option value="salida">Salida</option><option value="venta">Venta</option><option value="ajuste_entrada">Ajuste entrada</option><option value="ajuste_salida">Ajuste salida</option></select></label><Field label="Cantidad" type="number" value={mov.quantity} onChange={v => setMov({ ...mov, quantity: v })}/><Field label="Referencia" value={mov.reference} onChange={v => setMov({ ...mov, reference: v })}/><Field label="Observaciones" value={mov.notes} onChange={v => setMov({ ...mov, notes: v })}/><button disabled={saving} onClick={saveMovement} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar movimiento"}</button></div></Modal>}
+
+      {categoryOpen && <Modal title="Administrar categorías" onClose={() => setCategoryOpen(false)}><div className="space-y-3"><div className="flex gap-2"><input value={newCategory} onChange={e => setNewCategory(e.target.value)} placeholder="Nueva categoría" className="flex-1 border rounded-xl p-2.5 text-sm"/><button onClick={addCategory} className="px-4 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear</button></div><div className="max-h-72 overflow-auto divide-y">{categories.map(c => <div key={c.id} className="flex items-center justify-between py-2"><span className="text-sm">{c.name}</span><div className="flex gap-2"><button onClick={() => renameCategory(c)} className="p-2 border rounded-lg text-[#1B3A6B]" title="Renombrar"><Pencil size={14}/></button><button onClick={() => deleteCategory(c)} className="p-2 border rounded-lg text-red-600" title="Eliminar"><Trash2 size={14}/></button></div></div>)}</div></div></Modal>}
 
       {historyProduct && <Modal title={`Historial — ${historyProduct.sku}`} onClose={() => setHistoryProduct(null)}><div className="mb-3 text-sm font-medium">{historyProduct.name}<div className="text-xs text-[#5B6670]">Stock actual: {fmt(historyProduct.stock)} {historyProduct.unit || ""}</div></div><div className="max-h-80 overflow-auto space-y-2">{movements.map(m => <div key={m.id} className="border rounded-xl p-3 text-sm"><div className="flex justify-between"><b>{movementLabel(m.movement_type)}</b><span>{fmt(m.quantity)}</span></div><div className="text-xs text-[#5B6670]">{new Date(m.created_at).toLocaleString("es-BO")}{m.reference ? ` · ${m.reference}` : ""}</div>{m.notes && <div className="text-xs mt-1">{m.notes}</div>}</div>)}{movements.length === 0 && <div className="text-sm italic text-[#5B6670]">Sin movimientos.</div>}</div></Modal>}
     </div>
