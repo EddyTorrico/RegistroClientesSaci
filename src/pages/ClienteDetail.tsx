@@ -73,9 +73,7 @@ export function ClienteDetail() {
             <div className="text-xs uppercase tracking-wide mb-2 text-[#5B6670]">Datos del negocio</div>
             <div className="text-lg font-semibold mb-1 text-[#0F2647]">{cliente.name}</div>
             <div className="text-sm text-[#5B6670]">{(cliente.business_types ?? []).join(" + ")}</div>
-            <div className="text-sm flex items-center gap-1 mt-1 text-[#5B6670]">
-              <MapPin size={13} /> {cliente.zone}, {cliente.city}
-            </div>
+            <div className="text-sm flex items-center gap-1 mt-1 text-[#5B6670]"><MapPin size={13} /> {cliente.address || "Sin dirección"}</div><div className="text-sm mt-1 text-[#5B6670]">{cliente.zone || "—"}, {cliente.city || "—"}</div>{cliente.phone && <div className="text-sm mt-1 text-[#5B6670]"><Phone size={13} className="inline mr-1" />{cliente.phone}</div>}<div className="text-xs mt-2 text-[#8A857A]">Registrado: {cliente.created_at ? new Date(cliente.created_at).toLocaleDateString("es-BO") : "—"}</div>
           </Card>
 
           <Card>
@@ -85,7 +83,7 @@ export function ClienteDetail() {
                 <div key={c.id} className="flex items-center justify-between">
                   <div>
                     <div className="text-sm font-medium text-[#0F2647]">{c.name}</div>
-                    <div className="text-xs text-[#5B6670]">{c.position}</div>
+                    <div className="text-xs text-[#5B6670]">{c.position || "—"}</div><div className="text-xs text-[#5B6670] mt-0.5">📞 {c.phone || "—"} · WhatsApp: {c.whatsapp || "—"}{c.email ? ` · ${c.email}` : ""}</div>
                   </div>
                   <div className="flex gap-2">
                     <a href={`tel:${c.phone}`} className="w-8 h-8 rounded-full flex items-center justify-center bg-[#EEF0F2] text-[#1B3A6B]">
@@ -162,7 +160,7 @@ export function ClienteDetail() {
                 <div key={p.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0 last:pb-0" style={{ borderColor: "#F1F2F4" }}>
                   <div className="font-medium text-[#0F2647]">{p.description}</div>
                   <div className="text-xs text-[#5B6670]">
-                    {p.frequency} · {p.usual_brand}
+                    {p.frequency || "—"} · {p.usual_brand || "Sin marca"} · {p.approx_quantity ?? "—"} {p.unit || ""}{p.supplier ? ` · ${p.supplier}` : ""}
                   </div>
                 </div>
               ))}

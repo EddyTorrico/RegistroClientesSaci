@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Home, Users, MapPin, Target, CalendarClock, BarChart3, Settings,
-  Plus, LogOut, Package, UserCog,
+  Plus, LogOut, Package, UserCog, FileText, Boxes,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
@@ -14,6 +14,8 @@ const NAV = [
   { to: "/oportunidades", label: "Oportunidades", icon: Target },
   { to: "/seguimientos", label: "Seguimientos", icon: CalendarClock },
   { to: "/catalogo", label: "Catálogo", icon: Package },
+  { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
+  { to: "/inventario", label: "Inventario", icon: Boxes },
 ];
 
 export function Layout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
@@ -44,7 +46,7 @@ export function Layout({ children, title, subtitle }: { children: ReactNode; tit
           >
             <Plus size={16} /> Nueva visita
           </button>
-          {NAV.map((n) => {
+          {NAV.filter((n) => n.to !== "/inventario" || profile?.role !== "vendedor").map((n) => {
             const Icon = n.icon;
             return (
               <NavLink

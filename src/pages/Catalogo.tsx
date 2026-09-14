@@ -16,7 +16,7 @@ export function Catalogo() {
     setCategorias(cats ?? []);
     const { data: prods } = await supabase
       .from("products")
-      .select("id, sku, name, category_id, product_prices(price_type, price, currency)")
+      .select("id, sku, name, description, brand, category_id, product_prices(price_type, price, currency)")
       .eq("active", true);
     setProductos(prods ?? []);
   }
@@ -47,6 +47,7 @@ export function Catalogo() {
                 <tr className="text-left text-xs uppercase tracking-wide border-b text-[#5B6670]" style={{ borderColor: "#ECEEF1" }}>
                   <th className="py-2">SKU</th>
                   <th className="py-2">Producto</th>
+                  <th className="py-2">Marca</th>
                   <th className="py-2">Precios</th>
                 </tr>
               </thead>
@@ -54,14 +55,15 @@ export function Catalogo() {
                 {visibles.map((p) => (
                   <tr key={p.id} className="border-b" style={{ borderColor: "#F1F2F4" }}>
                     <td className="py-2.5 font-mono text-xs text-[#5B6670]">{p.sku}</td>
-                    <td className="py-2.5 font-medium text-[#0F2647]">{p.name}</td>
+                    <td className="py-2.5 font-medium text-[#0F2647]">{p.name}<div className="text-xs text-[#5B6670]">{p.description}</div></td>
+                    <td className="py-2.5 text-[#5B6670]">{p.brand || "—"}</td>
                     <td className="py-2.5 text-xs text-[#5B6670]">
                       {(p.product_prices ?? []).map((pr: any) => `${pr.price_type}: ${pr.currency} ${pr.price}`).join(" · ")}
                     </td>
                   </tr>
                 ))}
                 {visibles.length === 0 && (
-                  <tr><td colSpan={3} className="py-6 text-center italic text-[#5B6670]">Sin productos.</td></tr>
+                  <tr><td colSpan={4} className="py-6 text-center italic text-[#5B6670]">Sin productos.</td></tr>
                 )}
               </tbody>
             </table>

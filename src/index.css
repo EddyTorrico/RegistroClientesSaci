@@ -8,3 +8,8 @@ body {
   background-color: #F5F6F8;
   color: #0F2647;
 }
+
+@media print {
+  .print\:hidden { display:none !important; }
+  body { background:#fff !important; }
+}
