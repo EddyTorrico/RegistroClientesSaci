@@ -13,9 +13,8 @@ const NAV = [
   { to: "/mapa", label: "Mapa", icon: MapPin },
   { to: "/oportunidades", label: "Oportunidades", icon: Target },
   { to: "/seguimientos", label: "Seguimientos", icon: CalendarClock },
-  { to: "/catalogo", label: "Catálogo", icon: Package },
+  { to: "/productos", label: "Productos", icon: Package },
   { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
-  { to: "/inventario", label: "Inventario", icon: Boxes },
 ];
 
 export function Layout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
@@ -46,7 +45,7 @@ export function Layout({ children, title, subtitle }: { children: ReactNode; tit
           >
             <Plus size={16} /> Nueva visita
           </button>
-          {NAV.filter((n) => n.to !== "/inventario" || profile?.role !== "vendedor").map((n) => {
+          {NAV.map((n) => {
             const Icon = n.icon;
             return (
               <NavLink

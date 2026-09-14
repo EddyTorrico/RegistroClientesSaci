@@ -6,11 +6,10 @@ import { ClienteDetail } from "../pages/ClienteDetail";
 import { NuevaVisita } from "../pages/NuevaVisita";
 import { Oportunidades } from "../pages/Oportunidades";
 import { Seguimientos } from "../pages/Seguimientos";
-import { Catalogo } from "../pages/Catalogo";
 import { Mapa } from "../pages/Mapa";
 import { AdminUsuarios } from "../pages/AdminUsuarios";
-import { Inventario } from "../pages/Inventario";
 import { Cotizaciones } from "../pages/Cotizaciones";
+import { Productos } from "../pages/Productos";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 
 export function AppRoutes() {
@@ -23,8 +22,7 @@ export function AppRoutes() {
       <Route path="/visitas/nueva" element={<ProtectedRoute><NuevaVisita /></ProtectedRoute>} />
       <Route path="/oportunidades" element={<ProtectedRoute><Oportunidades /></ProtectedRoute>} />
       <Route path="/seguimientos" element={<ProtectedRoute><Seguimientos /></ProtectedRoute>} />
-      <Route path="/catalogo" element={<ProtectedRoute><Catalogo /></ProtectedRoute>} />
-      <Route path="/inventario" element={<ProtectedRoute allowedRoles={["admin", "gerente"]}><Inventario /></ProtectedRoute>} />
+      <Route path="/productos" element={<ProtectedRoute><Productos /></ProtectedRoute>} />
       <Route path="/cotizaciones" element={<ProtectedRoute><Cotizaciones /></ProtectedRoute>} />
       <Route path="/mapa" element={<ProtectedRoute><Mapa /></ProtectedRoute>} />
       <Route path="/admin/usuarios" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsuarios /></ProtectedRoute>} />
