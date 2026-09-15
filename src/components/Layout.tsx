@@ -15,7 +15,7 @@ const NAV = [
   { to: "/seguimientos", label: "Seguimientos", icon: CalendarClock },
   { to: "/productos", label: "Productos", icon: Package },
   { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
-  { to: "/ventas", label: "Ventas", icon: ShoppingBag },
+  { to: "/ventas", label: "Ventas", icon: ShoppingBag }, // Fase 7: módulo Ventas
 ];
 
 export function Layout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
