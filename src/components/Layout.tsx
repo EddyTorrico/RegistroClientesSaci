@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Home, Users, MapPin, Target, CalendarClock, BarChart3, Settings,
-  Plus, LogOut, Package, UserCog, FileText, ShoppingBag,
+  Plus, LogOut, Package, UserCog, FileText, ShoppingBag, WalletCards,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
@@ -15,7 +15,8 @@ const NAV = [
   { to: "/seguimientos", label: "Seguimientos", icon: CalendarClock },
   { to: "/productos", label: "Productos", icon: Package },
   { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
-  { to: "/ventas", label: "Ventas", icon: ShoppingBag }, // Fase 7: módulo Ventas
+  { to: "/ventas", label: "Ventas", icon: ShoppingBag },
+  { to: "/cobranza", label: "Cobranza", icon: WalletCards },
 ];
 
 export function Layout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {

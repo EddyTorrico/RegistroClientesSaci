@@ -33,6 +33,7 @@ export function Ventas() {
   const [products, setProducts] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
   const [sales, setSales] = useState<any[]>([]);
+  const [allSaleItems, setAllSaleItems] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [customerId, setCustomerId] = useState("");
@@ -65,16 +66,17 @@ export function Ventas() {
 
   async function loadAll() {
     setError("");
-    const [c,p,u,s,q] = await Promise.all([
+    const [c,p,u,s,q,si] = await Promise.all([
       supabase.from("customers").select("id,name,address,city,zone,phone").order("name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,image_url").eq("active", true).order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,status,subtotal,discount,total,amount_paid,balance,due_date,observations,created_at").order("created_at", {ascending:false}),
       supabase.from("quotations").select("id,quotation_number,customer_id,user_id,quotation_date,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total").order("created_at", {ascending:false}),
+      supabase.from("sale_items").select("sale_id,product_id,quantity,purchase_cost,subtotal"),
     ]);
-    const firstError = c.error || p.error || u.error || s.error || q.error;
+    const firstError = c.error || p.error || u.error || s.error || q.error || si.error;
     if (firstError) setError(firstError.message);
-    setCustomers(c.data ?? []); setProducts(p.data ?? []); setSellers(u.data ?? []); setSales(s.data ?? []); setQuotations(q.data ?? []);
+    setCustomers(c.data ?? []); setProducts(p.data ?? []); setSellers(u.data ?? []); setSales(s.data ?? []); setQuotations(q.data ?? []); setAllSaleItems(si.data ?? []);
   }
 
   async function reloadSales() {
@@ -179,6 +181,17 @@ export function Ventas() {
     } catch(e:any){ setError(e.message || "No fue posible abrir la venta."); } finally { setLoading(false); }
   }
 
+  async function cancelSale() {
+    if (!saved || saved.status === "anulada") return;
+    if (Number(saved.amount_paid || 0) > 0) { setError("La venta tiene pagos registrados. Regulariza la cobranza antes de anular."); return; }
+    const reason = window.prompt("Motivo de anulación de la venta:");
+    if (reason === null) return;
+    setLoading(true); setError("");
+    const { data, error:e } = await supabase.rpc("cancel_sale", { p_sale_id:saved.id, p_reason:reason || null });
+    if (e) setError(e.message); else { setSaved(data); await loadAll(); }
+    setLoading(false);
+  }
+
   function inReportPeriod(date:string) {
     const d = date.slice(0,10), ref=reportDate.slice(0,10);
     if(reportPeriod==="dia") return d===ref;
@@ -189,6 +202,10 @@ export function Ventas() {
   const reportTotal = reportSales.reduce((a,s)=>a+Number(s.total||0),0);
   const reportCollected = reportSales.reduce((a,s)=>a+Number(s.amount_paid||0),0);
   const reportBalance = reportSales.reduce((a,s)=>a+Number(s.balance||0),0);
+  const reportIds = new Set(reportSales.map(s=>s.id));
+  const reportCost = allSaleItems.filter(i=>reportIds.has(i.sale_id)).reduce((a,i)=>a+Number(i.quantity||0)*Number(i.purchase_cost||0),0);
+  const reportMargin = reportTotal - reportCost;
+  const reportMarginPct = reportTotal > 0 ? (reportMargin/reportTotal)*100 : 0;
   const bySeller = Object.values(reportSales.reduce((acc:any,s:any)=>{
     const name=sellers.find(x=>x.id===s.user_id)?.full_name || "Usuario";
     acc[s.user_id] ||= {id:s.user_id,name,count:0,total:0}; acc[s.user_id].count++; acc[s.user_id].total+=Number(s.total||0); return acc;
@@ -246,12 +263,12 @@ export function Ventas() {
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2">#</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">P. Unit.</th><th className="text-right">Total</th></tr></thead><tbody>{items.map((i,n)=><tr key={i.id||i.product_id} className="border-b"><td className="py-2">{n+1}</td><td className="font-mono text-xs">{i.sku}</td><td>{i.description}</td><td>{i.brand||"—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit||"unidad"}</td><td className="text-right">Bs {money(i.unit_price)}</td><td className="text-right">Bs {money(i.subtotal ?? (Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0)))}</td></tr>)}</tbody></table></div>
         <div className="mt-4 ml-auto max-w-xs text-sm space-y-1"><div className="flex justify-between"><span>Subtotal</span><b>Bs {money(saved.subtotal)}</b></div><div className="flex justify-between"><span>Descuento</span><b>Bs {money(saved.discount)}</b></div><div className="flex justify-between border-t pt-2 text-base"><span>Total</span><b>Bs {money(saved.total)}</b></div><div className="flex justify-between"><span>Pagado</span><b>Bs {money(saved.amount_paid)}</b></div><div className="flex justify-between"><span>Saldo</span><b>Bs {money(saved.balance)}</b></div></div>
         <div className="mt-6 text-xs space-y-1"><div><b>Forma de pago:</b> {saved.payment_method}</div><div><b>Tiempo de entrega:</b> {saved.delivery_time||"—"}</div>{saved.due_date && <div><b>Vencimiento:</b> {formatDate(saved.due_date)}</div>}{saved.observations && <div><b>Observaciones:</b> {saved.observations}</div>}</div>
-        <div className="mt-6 print:hidden flex gap-2 justify-end"><button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
+        <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={cancelSale} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700">Anular venta y devolver stock</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
       </div>}
 
       {screen==="report" && <div className="space-y-4 print:hidden">
         <div className="bg-white rounded-2xl p-5"><div className="flex flex-wrap items-end gap-3"><label className="text-xs">Periodo<select value={reportPeriod} onChange={e=>setReportPeriod(e.target.value as any)} className="block border rounded-lg p-2 mt-1"><option value="dia">Día</option><option value="mes">Mes</option><option value="anio">Año</option></select></label><label className="text-xs">Fecha de referencia<input type={reportPeriod==="dia"?"date":reportPeriod==="mes"?"month":"number"} min={reportPeriod==="anio"?"2020":undefined} max={reportPeriod==="anio"?"2100":undefined} value={reportPeriod==="anio"?reportDate.slice(0,4):reportPeriod==="mes"?reportDate.slice(0,7):reportDate} onChange={e=>setReportDate(reportPeriod==="anio"?`${e.target.value}-01-01`:reportPeriod==="mes"?`${e.target.value}-01`:e.target.value)} className="block border rounded-lg p-2 mt-1"/></label></div></div>
-        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3"><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Ventas</div><div className="text-2xl font-semibold">{reportSales.length}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Monto vendido</div><div className="text-2xl font-semibold">Bs {money(reportTotal)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Cobrado</div><div className="text-2xl font-semibold">Bs {money(reportCollected)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Saldo por cobrar</div><div className="text-2xl font-semibold">Bs {money(reportBalance)}</div></div></div>
+        <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3"><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Ventas</div><div className="text-2xl font-semibold">{reportSales.length}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Monto vendido</div><div className="text-2xl font-semibold">Bs {money(reportTotal)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Cobrado</div><div className="text-2xl font-semibold">Bs {money(reportCollected)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Saldo por cobrar</div><div className="text-2xl font-semibold">Bs {money(reportBalance)}</div></div></div><div className="grid sm:grid-cols-3 gap-3"><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Costo de productos</div><div className="text-xl font-semibold">Bs {money(reportCost)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Margen bruto</div><div className="text-xl font-semibold">Bs {money(reportMargin)}</div></div><div className="bg-white rounded-2xl p-4"><div className="text-xs text-[#5B6670]">Margen bruto %</div><div className="text-xl font-semibold">{money(reportMarginPct)}%</div></div></div>
         <div className="grid xl:grid-cols-2 gap-4"><div className="bg-white rounded-2xl p-5"><h3 className="font-semibold mb-3">Ventas del periodo</h3><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2">Código</th><th>Fecha</th><th>Cliente</th><th className="text-right">Total</th></tr></thead><tbody>{reportSales.map(s=><tr key={s.id} className="border-b"><td className="py-2 font-mono text-xs">{s.sale_number}</td><td>{formatDate(s.sale_date)}</td><td>{customers.find(c=>c.id===s.customer_id)?.name||"—"}</td><td className="text-right">Bs {money(s.total)}</td></tr>)}</tbody></table></div></div><div className="bg-white rounded-2xl p-5"><h3 className="font-semibold mb-3">Resumen por vendedor</h3>{bySeller.map(r=><div key={r.id} className="flex justify-between py-2 border-b text-sm"><span>{r.name}<span className="block text-xs text-[#5B6670]">{r.count} venta(s)</span></span><b>Bs {money(r.total)}</b></div>)}{bySeller.length===0 && <div className="text-sm italic text-[#5B6670]">Sin ventas en el periodo.</div>}</div></div>
       </div>}
     </div>
