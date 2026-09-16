@@ -49,11 +49,37 @@ const DOC_LABELS: Record<string, string> = {
 };
 
 const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", presentation_at: "", observations: "" };
-const emptyItemDraft = { client_item_code: "", client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
+const emptyItemDraft = { client_item_code: "", client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20", product_id: "", brand: "" };
 const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: true, invoice_number: "", invoice_amount: "", notes: "" };
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
 const emptyExpense = { expense_type: "transporte", description: "", amount: "", has_invoice: false, invoice_number: "" };
-const emptyNewProduct = { sku: "", name: "", unit: "unidad", purchase_price: "", sale_price: "" };
+const emptyNewProduct = { sku: "", name: "", brand: "", unit: "unidad", purchase_price: "", sale_price: "" };
+
+function ProductPickerBox({ products, onSelect, placeholder }: { products: any[]; onSelect: (p: any) => void; placeholder?: string }) {
+  const [q, setQ] = useState("");
+  const needle = q.trim().toLowerCase();
+  const matches = needle.length < 2 ? [] : products
+    .filter((p: any) => `${p.sku} ${p.name} ${p.brand || ""}`.toLowerCase().includes(needle))
+    .slice(0, 8);
+  return (
+    <div className="relative">
+      <input
+        value={q}
+        onChange={e => setQ(e.target.value)}
+        placeholder={placeholder || "Buscar producto existente por código, nombre o marca..."}
+        className="w-full border rounded-xl p-2.5 text-sm"
+      />
+      {matches.length > 0 && <div className="border rounded-xl mt-1 divide-y max-h-48 overflow-auto bg-white shadow-sm relative z-10">
+        {matches.map((p: any) => (
+          <button type="button" key={p.product_id} onClick={() => { onSelect(p); setQ(""); }} className="w-full text-left p-2 text-xs hover:bg-[#FAFBFC]">
+            <b>{p.sku}</b> · {p.name}{p.brand ? ` · ${p.brand}` : ""}{p.is_project_product ? <span className="ml-1 text-amber-700">(pendiente de compra)</span> : ""}
+          </button>
+        ))}
+      </div>}
+      {needle.length >= 2 && matches.length === 0 && <div className="text-xs text-[#5B6670] mt-1">No se encontró ningún producto existente con ese texto — completa los datos abajo como ítem nuevo.</div>}
+    </div>
+  );
+}
 
 export function Proyectos() {
   const { profile } = useAuth();
@@ -89,6 +115,7 @@ export function Proyectos() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [profitability, setProfitability] = useState<any>(null);
   const [linkedSale, setLinkedSale] = useState<any>(null);
+  const [quotationPreview, setQuotationPreview] = useState<{ quotation_number: string; subtotal: number; discount: number; total: number; items: any[] } | null>(null);
 
   const [itemEditDraft, setItemEditDraft] = useState(emptyItemDraft);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -117,7 +144,7 @@ export function Proyectos() {
       supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false }),
       supabase.from("customers").select("id,name,address").order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
-      supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active").eq("active", true).order("name"),
+      supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,is_project_product").eq("active", true).order("name"),
     ]);
     const firstError = p.error || c.error || s.error || pr.error;
     if (firstError) setError(firstError.message);
@@ -160,6 +187,7 @@ export function Proyectos() {
     const markup = Number(itemDraft.markup_percent) || 0;
     const built = {
       ...itemDraft,
+      product_id: itemDraft.product_id || null,
       estimated_unit_cost: cost,
       markup_percent: markup,
       requested_quantity: Number(itemDraft.requested_quantity),
@@ -183,6 +211,8 @@ export function Proyectos() {
       requested_quantity: String(it.requested_quantity ?? "1"),
       estimated_unit_cost: String(it.estimated_unit_cost ?? "0"),
       markup_percent: String(it.markup_percent ?? "20"),
+      product_id: it.product_id || "",
+      brand: it.brand || "",
     });
     setEditingDraftIndex(idx);
     setError("");
@@ -220,6 +250,7 @@ export function Proyectos() {
 
       const { error: ie } = await supabase.from("project_items").insert(newItems.map(i => ({
         project_id: p.id,
+        product_id: i.product_id || null,
         client_item_code: i.client_item_code.trim() || null,
         client_description: i.client_description.trim(),
         unit: i.unit.trim() || "unidad",
@@ -329,8 +360,10 @@ export function Proyectos() {
       if (p.quotation_id) {
         const { data: sale } = await supabase.from("sales").select("id,sale_number,status,total,amount_paid,balance,quotation_id").eq("quotation_id", p.quotation_id).maybeSingle();
         setLinkedSale(sale ?? null);
+        await loadQuotationPreview(p.quotation_id);
       } else {
         setLinkedSale(null);
+        setQuotationPreview(null);
       }
 
       if (isAdmin) {
@@ -345,6 +378,21 @@ export function Proyectos() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadQuotationPreview(quotationId: string) {
+    const [{ data: q }, { data: qi }] = await Promise.all([
+      supabase.from("quotations").select("quotation_number,subtotal,discount,total").eq("id", quotationId).single(),
+      supabase.from("quotation_items").select("id,sku,description,brand,unit,quantity,unit_price,discount,subtotal").eq("quotation_id", quotationId).order("id"),
+    ]);
+    if (!q) { setQuotationPreview(null); return; }
+    setQuotationPreview({
+      quotation_number: q.quotation_number,
+      subtotal: Number(q.subtotal || 0),
+      discount: Number(q.discount || 0),
+      total: Number(q.total || 0),
+      items: qi ?? [],
+    });
   }
 
   async function refreshCurrentProject() {
@@ -366,6 +414,7 @@ export function Proyectos() {
     const cost = Number(itemEditDraft.estimated_unit_cost) || 0;
     const markup = Number(itemEditDraft.markup_percent) || 0;
     const payload = {
+      product_id: itemEditDraft.product_id || null,
       client_item_code: itemEditDraft.client_item_code.trim() || null,
       client_description: itemEditDraft.client_description.trim(),
       unit: itemEditDraft.unit.trim() || "unidad",
@@ -384,6 +433,7 @@ export function Proyectos() {
   }
 
   function editExistingItem(item: any) {
+    const linked = products.find((p: any) => p.product_id === item.product_id);
     setItemEditDraft({
       client_item_code: item.client_item_code || "",
       client_description: item.client_description || "",
@@ -391,6 +441,8 @@ export function Proyectos() {
       requested_quantity: String(item.requested_quantity ?? "1"),
       estimated_unit_cost: String(item.estimated_unit_cost ?? "0"),
       markup_percent: String(item.markup_percent ?? "20"),
+      product_id: item.product_id || "",
+      brand: linked?.brand || "",
     });
     setEditingItemId(item.id);
     setError("");
@@ -426,10 +478,16 @@ export function Proyectos() {
       const { data: newProduct, error: pe } = await supabase.from("products").insert({
         sku: newProductDraft.sku.trim(),
         name: newProductDraft.name.trim(),
+        brand: newProductDraft.brand.trim() || null,
         unit: newProductDraft.unit.trim() || "unidad",
         purchase_price: Number(newProductDraft.purchase_price) || Number(item.estimated_unit_cost) || 0,
         sale_price: Number(newProductDraft.sale_price) || Number(item.proposed_unit_price) || 0,
         active: true,
+        // Nace como pendiente: no se mezcla con el catálogo general ni con los
+        // selectores de Cotizaciones/Ventas para otros clientes hasta que se
+        // registre una compra real (Proyectos → Compras), momento en el que
+        // pasa a ser inventario de verdad automáticamente.
+        is_project_product: true,
       }).select("id").single();
       if (pe) throw pe;
       await linkItemProduct(item.id, newProduct.id);
@@ -730,6 +788,21 @@ export function Proyectos() {
           <h3 className="font-semibold text-[#0F2647]">Ítems solicitados por el cliente</h3>
           <p className="text-xs text-[#5B6670]">Si todavía no tienes el costo del proveedor, agrega el ítem igual (con costo 0) — puedes editarlo aquí antes de guardar, o más adelante desde el detalle del proyecto, antes de generar la cotización.</p>
           <div className="border rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
+            <div>
+              <div className="text-xs text-[#5B6670] mb-1">¿El producto ya existe en tu catálogo? Búscalo y selecciónalo (opcional):</div>
+              <ProductPickerBox products={products} onSelect={(p: any) => setItemDraft(d => ({
+                ...d,
+                product_id: p.product_id,
+                brand: p.brand || "",
+                client_description: d.client_description || p.name,
+                unit: p.unit || d.unit,
+                estimated_unit_cost: (!d.estimated_unit_cost || d.estimated_unit_cost === "0") ? String(p.purchase_price || 0) : d.estimated_unit_cost,
+              }))} />
+              {itemDraft.product_id && <div className="mt-1 text-xs text-green-700 flex items-center gap-2 flex-wrap">
+                Vinculado a producto del catálogo{itemDraft.brand ? ` · ${itemDraft.brand}` : ""}
+                <button type="button" onClick={() => setItemDraft({ ...itemDraft, product_id: "", brand: "" })} className="text-red-600 underline">Quitar vínculo</button>
+              </div>}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Código del cliente" value={itemDraft.client_item_code} onChange={v => setItemDraft({ ...itemDraft, client_item_code: v })} />
               <Field label="Unidad" value={itemDraft.unit} onChange={v => setItemDraft({ ...itemDraft, unit: v })} />
@@ -749,7 +822,7 @@ export function Proyectos() {
 
           <div className="max-h-64 overflow-auto divide-y">
             {newItems.map((i, idx) => <div key={idx} className="py-2 flex justify-between gap-2 text-sm">
-              <div><b>{i.client_item_code || "s/c"}</b> · {i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}</div></div>
+              <div><b>{i.client_item_code || "s/c"}</b> · {i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}{i.product_id ? <span className="text-green-700"> · vinculado a catálogo{i.brand ? ` (${i.brand})` : ""}</span> : <span className="text-amber-700"> · sin vincular</span>}</div></div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={() => editDraftItem(idx)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
                 <button onClick={() => { setNewItems(newItems.filter((_, x) => x !== idx)); if (editingDraftIndex === idx) cancelDraftEdit(); }}><Trash2 size={15} className="text-red-600" /></button>
@@ -819,7 +892,8 @@ export function Proyectos() {
                         <option value="">Sin vincular</option>
                         {products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} · {p.name}</option>)}
                       </select>
-                      {!i.product_id && canManageCatalog && <button onClick={() => { setNewProductOpen(i.id); setNewProductDraft({ sku: i.client_item_code || "", name: i.client_description.slice(0, 80), unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") }); }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
+                      {!i.product_id && canManageCatalog && <button onClick={() => { setNewProductOpen(i.id); setNewProductDraft({ sku: i.client_item_code || "", name: i.client_description.slice(0, 80), brand: "", unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") }); }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
+                      {linkedProduct?.is_project_product && <div className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-block">Pendiente de compra — aún no visible en catálogo general</div>}
                     </td>
                     <td><div className="flex gap-2">
                       <button onClick={() => editExistingItem(i)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
@@ -836,6 +910,21 @@ export function Proyectos() {
           <div className="border rounded-xl p-3 bg-[#FAFBFC] space-y-2">
             <div className="text-sm font-semibold text-[#0F2647]">{editingItemId ? "Editar ítem" : "Agregar ítem"}</div>
             <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente.</p>
+            <div>
+              <div className="text-xs text-[#5B6670] mb-1">¿El producto ya existe en tu catálogo? Búscalo y selecciónalo (opcional):</div>
+              <ProductPickerBox products={products} onSelect={(p: any) => setItemEditDraft(d => ({
+                ...d,
+                product_id: p.product_id,
+                brand: p.brand || "",
+                client_description: d.client_description || p.name,
+                unit: p.unit || d.unit,
+                estimated_unit_cost: (!d.estimated_unit_cost || d.estimated_unit_cost === "0") ? String(p.purchase_price || 0) : d.estimated_unit_cost,
+              }))} />
+              {itemEditDraft.product_id && <div className="mt-1 text-xs text-green-700 flex items-center gap-2 flex-wrap">
+                Vinculado a producto del catálogo{itemEditDraft.brand ? ` · ${itemEditDraft.brand}` : ""}
+                <button type="button" onClick={() => setItemEditDraft({ ...itemEditDraft, product_id: "", brand: "" })} className="text-red-600 underline">Quitar vínculo</button>
+              </div>}
+            </div>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Código del cliente" value={itemEditDraft.client_item_code} onChange={v => setItemEditDraft({ ...itemEditDraft, client_item_code: v })} />
               <Field label="Unidad" value={itemEditDraft.unit} onChange={v => setItemEditDraft({ ...itemEditDraft, unit: v })} />
@@ -856,6 +945,7 @@ export function Proyectos() {
             <div className="space-y-3">
               <Field label="Código SACIPETROL" value={newProductDraft.sku} onChange={v => setNewProductDraft({ ...newProductDraft, sku: v })} />
               <Field label="Nombre / Descripción" value={newProductDraft.name} onChange={v => setNewProductDraft({ ...newProductDraft, name: v })} />
+              <Field label="Marca" value={newProductDraft.brand} onChange={v => setNewProductDraft({ ...newProductDraft, brand: v })} />
               <div className="grid grid-cols-3 gap-2">
                 <Field label="Unidad" value={newProductDraft.unit} onChange={v => setNewProductDraft({ ...newProductDraft, unit: v })} />
                 <Field label="Precio compra" type="number" value={newProductDraft.purchase_price} onChange={v => setNewProductDraft({ ...newProductDraft, purchase_price: v })} />
@@ -873,9 +963,34 @@ export function Proyectos() {
           </div>}
           {current.quotation_id && <div className="space-y-3">
             <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800 flex items-center justify-between">
-              <span>Cotización generada para este proyecto.</span>
+              <span>Cotización {quotationPreview?.quotation_number ? <b>{quotationPreview.quotation_number}</b> : ""} generada para este proyecto.</span>
               <button onClick={() => navigate("/cotizaciones")} className="text-[#1B3A6B] font-semibold"><ExternalLink size={14} className="inline mr-1" />Ver / imprimir en Cotizaciones</button>
             </div>
+
+            {quotationPreview && <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio unit.</th><th className="text-right">Subtotal</th></tr></thead>
+                <tbody>
+                  {quotationPreview.items.map(it => <tr key={it.id} className="border-b">
+                    <td className="py-2 font-mono text-xs">{it.sku}</td>
+                    <td>{it.description}</td>
+                    <td>{it.brand || "—"}</td>
+                    <td className="text-right">{qty(it.quantity)}</td>
+                    <td>{it.unit}</td>
+                    <td className="text-right whitespace-nowrap">Bs {money(it.unit_price)}</td>
+                    <td className="text-right whitespace-nowrap font-medium">Bs {money(it.subtotal)}</td>
+                  </tr>)}
+                  {quotationPreview.items.length === 0 && <tr><td colSpan={7} className="py-6 text-center italic text-[#5B6670]">La cotización no tiene ítems.</td></tr>}
+                </tbody>
+              </table>
+              <div className="mt-3 ml-auto max-w-xs text-sm space-y-1">
+                <div className="flex justify-between"><span>Subtotal:</span><b>Bs {money(quotationPreview.subtotal)}</b></div>
+                <div className="flex justify-between"><span>Descuento:</span><b>Bs {money(quotationPreview.discount)}</b></div>
+                <div className="flex justify-between text-base border-t pt-2"><span>Total General:</span><b>Bs {money(quotationPreview.total)}</b></div>
+              </div>
+              {quotationPreview.items.some(it => Number(it.unit_price) <= 0) && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2 mt-2">Uno o más ítems salieron con precio Bs 0.00 — probablemente se generó la cotización antes de cargar el costo/markup real. Corrige el costo del ítem en la pestaña "Ítems" y luego usa "Actualizar cotización" desde Cotizaciones (botón de arriba) para que los montos se recalculen.</div>}
+            </div>}
+
             {!current.sale_id && !linkedSale && <button onClick={() => navigate(`/ventas?quotation=${current.quotation_id}`)} className="px-5 py-2.5 rounded-xl border text-[#1B3A6B] text-sm"><ShoppingBag size={15} className="inline mr-1" />Convertir a venta</button>}
             {!current.sale_id && linkedSale && <div className="rounded-xl bg-green-50 border border-green-100 p-3 text-sm text-green-800 flex items-center justify-between">
               <span>Se detectó la venta <b>{linkedSale.sale_number}</b> generada desde esta cotización.</span>
