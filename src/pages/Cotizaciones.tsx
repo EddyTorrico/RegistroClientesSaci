@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText, ShoppingBag } from "lucide-react";
+import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText, ShoppingBag, Pencil } from "lucide-react";
 
 const COMPANY = {
   name: "SACIPETROL S.R.L.",
@@ -41,6 +41,8 @@ function formatDate(value?: string | null) {
 export function Cotizaciones() {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = profile?.role === "admin";
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [customers, setCustomers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
@@ -111,6 +113,7 @@ export function Cotizaciones() {
     setDiscount("0");
     setObservations("");
     setError("");
+    setEditingId(null);
     setScreen("new");
   }
 
@@ -174,43 +177,138 @@ export function Cotizaciones() {
       const d = new Date();
       d.setDate(d.getDate() + Number(valid || 0));
 
-      const { data: q, error: e } = await supabase.from("quotations").insert({
-        customer_id: customer,
-        user_id: sellerId,
-        customer_address: selectedCustomer?.address?.trim() || null,
-        valid_until: d.toISOString().slice(0, 10),
-        delivery_time: delivery,
-        payment_terms: payment,
-        observations: observations.trim() || null,
-        subtotal,
-        discount: Number(discount || 0),
-        total,
-        status: "emitida",
-      }).select().single();
-      if (e) throw e;
+      if (editingId) {
+        const { data: q, error: e } = await supabase.from("quotations").update({
+          customer_id: customer,
+          user_id: sellerId,
+          customer_address: selectedCustomer?.address?.trim() || null,
+          valid_until: d.toISOString().slice(0, 10),
+          delivery_time: delivery,
+          payment_terms: payment,
+          observations: observations.trim() || null,
+          subtotal,
+          discount: Number(discount || 0),
+          total,
+        }).eq("id", editingId).select().single();
+        if (e) throw e;
 
-      const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
-        quotation_id: q.id,
-        product_id: i.product_id,
-        sku: i.sku,
-        description: i.description,
-        brand: i.brand || null,
-        unit: i.unit || "unidad",
-        quantity: Number(i.quantity),
-        unit_price: Number(i.unit_price),
-        discount: Number(i.discount || 0),
-        subtotal: Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0),
-      })));
-      if (ie) throw ie;
+        const { error: de } = await supabase.from("quotation_items").delete().eq("quotation_id", editingId);
+        if (de) throw de;
 
-      setSaved(q);
-      setScreen("view");
-      await reloadQuotations();
+        const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
+          quotation_id: editingId,
+          product_id: i.product_id,
+          sku: i.sku,
+          description: i.description,
+          brand: i.brand || null,
+          unit: i.unit || "unidad",
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          discount: Number(i.discount || 0),
+          subtotal: Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0),
+        })));
+        if (ie) throw ie;
+
+        setSaved(q);
+        setEditingId(null);
+        setScreen("view");
+        await reloadQuotations();
+      } else {
+        const { data: q, error: e } = await supabase.from("quotations").insert({
+          customer_id: customer,
+          user_id: sellerId,
+          customer_address: selectedCustomer?.address?.trim() || null,
+          valid_until: d.toISOString().slice(0, 10),
+          delivery_time: delivery,
+          payment_terms: payment,
+          observations: observations.trim() || null,
+          subtotal,
+          discount: Number(discount || 0),
+          total,
+          status: "emitida",
+        }).select().single();
+        if (e) throw e;
+
+        const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
+          quotation_id: q.id,
+          product_id: i.product_id,
+          sku: i.sku,
+          description: i.description,
+          brand: i.brand || null,
+          unit: i.unit || "unidad",
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          discount: Number(i.discount || 0),
+          subtotal: Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0),
+        })));
+        if (ie) throw ie;
+
+        setSaved(q);
+        setScreen("view");
+        await reloadQuotations();
+      }
     } catch (e: any) {
       setError(e.message || "No fue posible guardar la cotización.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function editQuotation(q: any) {
+    setError("");
+    setLoadingView(true);
+    try {
+      const { data: quoteItems, error: itemError } = await supabase
+        .from("quotation_items")
+        .select("id,quotation_id,product_id,sku,description,brand,unit,quantity,unit_price,discount,subtotal")
+        .eq("quotation_id", q.id)
+        .order("id");
+      if (itemError) throw itemError;
+
+      const normalizedItems = (quoteItems ?? []).map((i: any) => {
+        const p = products.find((x: any) => x.product_id === i.product_id);
+        return {
+          ...i,
+          brand: i.brand || p?.brand || "",
+          unit: i.unit || p?.unit || "unidad",
+          stock: Number(p?.stock || 0),
+        };
+      });
+
+      setEditingId(q.id);
+      setSaved(null);
+      setCustomer(q.customer_id);
+      setSellerId(q.user_id);
+      setSearch("");
+      setValid("15");
+      setDelivery(q.delivery_time || "Inmediata");
+      setDeliveryPreset(["Inmediata", "5 días", "10 días", "15 días"].includes(q.delivery_time) ? q.delivery_time : "Personalizada");
+      setPayment(q.payment_terms || "Contado");
+      setDiscount(String(q.discount ?? 0));
+      setObservations(q.observations || "");
+      setItems(normalizedItems);
+      setScreen("new");
+    } catch (e: any) {
+      setError(e.message || "No fue posible abrir la cotización para editar.");
+    } finally {
+      setLoadingView(false);
+    }
+  }
+
+  async function deleteQuotation(q: any) {
+    setError("");
+    let warning = "";
+    try {
+      const { data: linkedProject } = await supabase.from("projects").select("id,project_number").eq("quotation_id", q.id).maybeSingle();
+      if (linkedProject) warning = ` Esta cotización está vinculada al proyecto ${linkedProject.project_number}; si la eliminas, el proyecto quedará sin cotización vinculada.`;
+    } catch {
+      // el módulo Proyectos puede no estar instalado todavía; se ignora la verificación.
+    }
+    if (!window.confirm(`¿Eliminar la cotización ${q.quotation_number}?${warning} Esta acción no se puede deshacer.`)) return;
+    const { error: e } = await supabase.from("quotations").delete().eq("id", q.id);
+    if (e) { setError(e.message); return; }
+    if (saved?.id === q.id) { setSaved(null); setScreen("list"); }
+    await reloadQuotations();
   }
 
   async function viewQuotation(q: any, printAfter = false) {
@@ -276,7 +374,7 @@ export function Cotizaciones() {
     <div className="space-y-4">
       <div className="flex flex-wrap justify-between gap-2 print:hidden">
         <div className="flex gap-2">
-          <button onClick={() => { setScreen("list"); setSaved(null); }} className={`px-4 py-2.5 rounded-xl text-sm border ${screen === "list" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><FileText size={15} className="inline mr-1"/>Cotizaciones guardadas</button>
+          <button onClick={() => { setScreen("list"); setSaved(null); setEditingId(null); }} className={`px-4 py-2.5 rounded-xl text-sm border ${screen === "list" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><FileText size={15} className="inline mr-1"/>Cotizaciones guardadas</button>
           <button onClick={resetQuotation} className={`px-4 py-2.5 rounded-xl text-sm border ${screen === "new" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><Plus size={15} className="inline mr-1"/>Nueva cotización</button>
         </div>
       </div>
@@ -313,7 +411,9 @@ export function Cotizaciones() {
                     <td><div className="flex justify-end gap-2">
                       <button disabled={loadingView} title="Ver cotización" onClick={() => viewQuotation(q)} className="p-2 rounded-lg border text-[#1B3A6B]"><Eye size={15}/></button>
                       <button disabled={loadingView} title="Imprimir cotización" onClick={() => viewQuotation(q, true)} className="p-2 rounded-lg border text-[#1B3A6B]"><Printer size={15}/></button>
+                      <button disabled={loadingView} title="Actualizar cotización" onClick={() => editQuotation(q)} className="p-2 rounded-lg border text-[#1B3A6B]"><Pencil size={15}/></button>
                       <button title="Convertir a venta" onClick={() => navigate(`/ventas?quotation=${q.id}`)} className="p-2 rounded-lg border text-[#1B3A6B]"><ShoppingBag size={15}/></button>
+                      {isAdmin && <button title="Eliminar cotización" onClick={() => deleteQuotation(q)} className="p-2 rounded-lg border text-red-600"><Trash2 size={15}/></button>}
                     </div></td>
                   </tr>;
                 })}
@@ -370,7 +470,9 @@ export function Cotizaciones() {
 
           <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
             <button onClick={() => setScreen("list")} className="px-5 py-2.5 rounded-xl border bg-white text-[#0F2647]">Volver a cotizaciones</button>
+            <button onClick={() => editQuotation(saved)} className="px-5 py-2.5 rounded-xl border bg-white text-[#1B3A6B]"><Pencil size={16} className="inline mr-2"/>Actualizar cotización</button>
             <button onClick={() => navigate(`/ventas?quotation=${saved.id}`)} className="px-5 py-2.5 rounded-xl border bg-white text-[#1B3A6B]"><ShoppingBag size={16} className="inline mr-2"/>Convertir a venta</button>
+            {isAdmin && <button onClick={() => deleteQuotation(saved)} className="px-5 py-2.5 rounded-xl border border-red-200 bg-white text-red-600"><Trash2 size={16} className="inline mr-2"/>Eliminar</button>}
             <button onClick={() => window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / Guardar PDF</button>
           </div>
         </div>
@@ -378,6 +480,7 @@ export function Cotizaciones() {
 
       {screen === "new" && (
         <div className="grid xl:grid-cols-2 gap-5 print:hidden">
+          {editingId && <div className="xl:col-span-2 rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">Estás actualizando una cotización existente. Los cambios reemplazan sus productos y totales al guardar.</div>}
           <div className="bg-white rounded-2xl p-5 space-y-4">
             <div className="grid md:grid-cols-2 gap-3">
               <label className="text-xs text-[#5B6670]">Cliente
@@ -463,7 +566,7 @@ export function Cotizaciones() {
 
             <div className="text-[11px] text-[#5B6670] italic mt-3">* El stock está sujeto a modificaciones sin previo aviso.</div>
 
-            <button disabled={loading} onClick={save} className="w-full mt-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{loading ? "Guardando..." : "Guardar cotización"}</button>
+            <button disabled={loading} onClick={save} className="w-full mt-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{loading ? "Guardando..." : editingId ? "Guardar cambios" : "Guardar cotización"}</button>
             <div className="text-xs text-[#5B6670] mt-2 text-center">Después de guardar aparecerá la opción <b>Imprimir / Guardar PDF</b>.</div>
           </div>
         </div>

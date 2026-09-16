@@ -5,7 +5,7 @@ import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
 import {
   Plus, Search, Eye, Trash2, Check, X, ShoppingBag, Package,
-  Truck, Receipt, Upload, BarChart3, ClipboardList, ExternalLink,
+  Truck, Receipt, Upload, BarChart3, ClipboardList, ExternalLink, Pencil,
 } from "lucide-react";
 
 const moneyFmt = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -19,6 +19,19 @@ function formatDate(value?: string | null) {
   return new Intl.DateTimeFormat("es-BO").format(new Date(y, m - 1, d));
 }
 function isoToday() { return new Date().toISOString().slice(0, 10); }
+function toDatetimeLocal(value?: string | null) {
+  if (!value) return "";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+function formatDateTime(value?: string | null) {
+  if (!value) return "—";
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleString("es-BO", { dateStyle: "short", timeStyle: "short" });
+}
 
 const STATUS_LABELS: Record<string, string> = {
   registrado: "Registrado", cotizado: "Cotizado", ganado: "Ganado",
@@ -35,7 +48,7 @@ const DOC_LABELS: Record<string, string> = {
   factura_venta: "Factura de venta", otro: "Otro",
 };
 
-const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", observations: "" };
+const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", presentation_at: "", observations: "" };
 const emptyItemDraft = { client_item_code: "", client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
 const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: true, invoice_number: "", invoice_amount: "", notes: "" };
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
@@ -61,6 +74,12 @@ export function Proyectos() {
   const [form, setForm] = useState(emptyForm);
   const [newItems, setNewItems] = useState<any[]>([]);
   const [itemDraft, setItemDraft] = useState(emptyItemDraft);
+  const [editingDraftIndex, setEditingDraftIndex] = useState<number | null>(null);
+
+  const [editProjectOpen, setEditProjectOpen] = useState(false);
+  const [editProjectDraft, setEditProjectDraft] = useState(emptyForm);
+  const [editProjectTarget, setEditProjectTarget] = useState<any>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const [current, setCurrent] = useState<any>(null);
   const [detailTab, setDetailTab] = useState<"items" | "cotizacion" | "compras" | "gastos" | "documentos" | "rentabilidad">("items");
@@ -95,7 +114,7 @@ export function Proyectos() {
   async function load() {
     setError("");
     const [p, c, s, pr] = await Promise.all([
-      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,created_at").order("created_at", { ascending: false }),
+      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false }),
       supabase.from("customers").select("id,name,address").order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active").eq("active", true).order("name"),
@@ -109,7 +128,7 @@ export function Proyectos() {
   }
 
   async function reloadProjects() {
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,created_at").order("created_at", { ascending: false });
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false });
     if (e) setError(e.message); else setProjects(data ?? []);
   }
 
@@ -127,6 +146,7 @@ export function Proyectos() {
     setForm({ ...emptyForm, user_id: profile?.id ?? "" });
     setNewItems([]);
     setItemDraft(emptyItemDraft);
+    setEditingDraftIndex(null);
     setScreen("new");
   }
 
@@ -138,13 +158,38 @@ export function Proyectos() {
     }
     const cost = Number(itemDraft.estimated_unit_cost) || 0;
     const markup = Number(itemDraft.markup_percent) || 0;
-    setNewItems([...newItems, {
+    const built = {
       ...itemDraft,
       estimated_unit_cost: cost,
       markup_percent: markup,
       requested_quantity: Number(itemDraft.requested_quantity),
       proposed_unit_price: Math.round(cost * (1 + markup / 100) * 100) / 100,
-    }]);
+    };
+    if (editingDraftIndex !== null) {
+      setNewItems(newItems.map((it, idx) => idx === editingDraftIndex ? built : it));
+      setEditingDraftIndex(null);
+    } else {
+      setNewItems([...newItems, built]);
+    }
+    setItemDraft(emptyItemDraft);
+  }
+
+  function editDraftItem(idx: number) {
+    const it = newItems[idx];
+    setItemDraft({
+      client_item_code: it.client_item_code || "",
+      client_description: it.client_description || "",
+      unit: it.unit || "unidad",
+      requested_quantity: String(it.requested_quantity ?? "1"),
+      estimated_unit_cost: String(it.estimated_unit_cost ?? "0"),
+      markup_percent: String(it.markup_percent ?? "20"),
+    });
+    setEditingDraftIndex(idx);
+    setError("");
+  }
+
+  function cancelDraftEdit() {
+    setEditingDraftIndex(null);
     setItemDraft(emptyItemDraft);
   }
 
@@ -166,6 +211,8 @@ export function Proyectos() {
         customer_id: form.customer_id,
         user_id: form.user_id,
         commission_percent: form.commission_percent ? Number(form.commission_percent) : null,
+        contact_name: form.contact_name.trim() || null,
+        presentation_at: form.presentation_at ? new Date(form.presentation_at).toISOString() : null,
         observations: form.observations.trim() || null,
         created_by: profile.id,
       }).select().single();
@@ -197,6 +244,55 @@ export function Proyectos() {
     setDetailTab("items");
     setScreen("detail");
     await loadDetail(p);
+  }
+
+  function openEditProject(p: any) {
+    setEditProjectTarget(p);
+    setEditProjectDraft({
+      name: p.name || "",
+      client_reference: p.client_reference || "",
+      customer_id: p.customer_id || "",
+      user_id: p.user_id || "",
+      commission_percent: p.commission_percent != null ? String(p.commission_percent) : "",
+      contact_name: p.contact_name || "",
+      presentation_at: toDatetimeLocal(p.presentation_at),
+      observations: p.observations || "",
+    });
+    setError("");
+    setEditProjectOpen(true);
+  }
+
+  async function saveEditProject() {
+    if (!editProjectTarget) return;
+    setError("");
+    if (!editProjectDraft.name.trim() || !editProjectDraft.customer_id || !editProjectDraft.user_id) {
+      setError("Indica nombre del proyecto, cliente y vendedor asignado.");
+      return;
+    }
+    setSaving(true);
+    const { error: e } = await supabase.from("projects").update({
+      name: editProjectDraft.name.trim(),
+      client_reference: editProjectDraft.client_reference.trim() || null,
+      customer_id: editProjectDraft.customer_id,
+      user_id: editProjectDraft.user_id,
+      commission_percent: editProjectDraft.commission_percent ? Number(editProjectDraft.commission_percent) : null,
+      contact_name: editProjectDraft.contact_name.trim() || null,
+      presentation_at: editProjectDraft.presentation_at ? new Date(editProjectDraft.presentation_at).toISOString() : null,
+      observations: editProjectDraft.observations.trim() || null,
+    }).eq("id", editProjectTarget.id);
+    setSaving(false);
+    if (e) { setError(e.message); return; }
+    setEditProjectOpen(false);
+    await reloadProjects();
+    if (current?.id === editProjectTarget.id) await refreshCurrentProject();
+  }
+
+  async function deleteProject(p: any) {
+    if (!window.confirm(`¿Eliminar el proyecto ${p.project_number} — "${p.name}"? Se eliminarán también sus ítems, compras, gastos y documentos registrados. Esta acción no se puede deshacer.`)) return;
+    const { error: e } = await supabase.from("projects").delete().eq("id", p.id);
+    if (e) { setError(e.message); return; }
+    if (current?.id === p.id) { setCurrent(null); setScreen("list"); }
+    await reloadProjects();
   }
 
   async function loadDetail(p: any) {
@@ -253,7 +349,7 @@ export function Proyectos() {
 
   async function refreshCurrentProject() {
     if (!current) return;
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,created_at").eq("id", current.id).single();
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").eq("id", current.id).single();
     if (e) { setError(e.message); return; }
     setCurrent(data);
     await loadDetail(data);
@@ -269,8 +365,7 @@ export function Proyectos() {
     }
     const cost = Number(itemEditDraft.estimated_unit_cost) || 0;
     const markup = Number(itemEditDraft.markup_percent) || 0;
-    const { error: e } = await supabase.from("project_items").insert({
-      project_id: current.id,
+    const payload = {
       client_item_code: itemEditDraft.client_item_code.trim() || null,
       client_description: itemEditDraft.client_description.trim(),
       unit: itemEditDraft.unit.trim() || "unidad",
@@ -278,16 +373,39 @@ export function Proyectos() {
       estimated_unit_cost: cost,
       markup_percent: markup,
       proposed_unit_price: Math.round(cost * (1 + markup / 100) * 100) / 100,
-    });
+    };
+    const { error: e } = editingItemId
+      ? await supabase.from("project_items").update(payload).eq("id", editingItemId)
+      : await supabase.from("project_items").insert({ project_id: current.id, ...payload });
     if (e) { setError(e.message); return; }
     setItemEditDraft(emptyItemDraft);
+    setEditingItemId(null);
     await loadDetail(current);
+  }
+
+  function editExistingItem(item: any) {
+    setItemEditDraft({
+      client_item_code: item.client_item_code || "",
+      client_description: item.client_description || "",
+      unit: item.unit || "unidad",
+      requested_quantity: String(item.requested_quantity ?? "1"),
+      estimated_unit_cost: String(item.estimated_unit_cost ?? "0"),
+      markup_percent: String(item.markup_percent ?? "20"),
+    });
+    setEditingItemId(item.id);
+    setError("");
+  }
+
+  function cancelItemEdit() {
+    setEditingItemId(null);
+    setItemEditDraft(emptyItemDraft);
   }
 
   async function removeItem(itemId: string) {
     if (!window.confirm("¿Quitar este ítem del proyecto?")) return;
     const { error: e } = await supabase.from("project_items").delete().eq("id", itemId);
     if (e) { setError(e.message); return; }
+    if (editingItemId === itemId) cancelItemEdit();
     await loadDetail(current);
   }
 
@@ -577,7 +695,11 @@ export function Proyectos() {
                     <td>{c?.name || "—"}</td>
                     <td>{s?.full_name || "—"}</td>
                     <td><span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
-                    <td className="text-right"><button onClick={() => openProject(p)} className="p-2 rounded-lg border text-[#1B3A6B]"><Eye size={15} /></button></td>
+                    <td className="text-right"><div className="flex justify-end gap-2">
+                      <button title="Ver proyecto" onClick={() => openProject(p)} className="p-2 rounded-lg border text-[#1B3A6B]"><Eye size={15} /></button>
+                      <button title="Editar proyecto" onClick={() => openEditProject(p)} className="p-2 rounded-lg border text-[#1B3A6B]"><Pencil size={15} /></button>
+                      {isAdmin && <button title="Eliminar proyecto" onClick={() => deleteProject(p)} className="p-2 rounded-lg border text-red-600"><Trash2 size={15} /></button>}
+                    </div></td>
                   </tr>;
                 })}
                 {filteredProjects.length === 0 && <tr><td colSpan={6} className="py-10 text-center italic text-[#5B6670]">No se encontraron proyectos.</td></tr>}
@@ -596,12 +718,17 @@ export function Proyectos() {
             <label className="block text-xs text-[#5B6670]">Cliente<select value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className="block text-xs text-[#5B6670]">Vendedor asignado<select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
           </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Nombre de contacto (cotización)" value={form.contact_name} onChange={v => setForm({ ...form, contact_name: v })} />
+            <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={form.presentation_at} onChange={e => setForm({ ...form, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+          </div>
           <label className="block text-xs text-[#5B6670]">Comisión variable (%)<input type="number" min="0" step="0.01" value={form.commission_percent} onChange={e => setForm({ ...form, commission_percent: e.target.value })} placeholder="Ej.: 3" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <label className="block text-xs text-[#5B6670]">Observaciones<textarea rows={3} value={form.observations} onChange={e => setForm({ ...form, observations: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
         </div>
 
         <div className="bg-white rounded-2xl p-5 space-y-3">
           <h3 className="font-semibold text-[#0F2647]">Ítems solicitados por el cliente</h3>
+          <p className="text-xs text-[#5B6670]">Si todavía no tienes el costo del proveedor, agrega el ítem igual (con costo 0) — puedes editarlo aquí antes de guardar, o más adelante desde el detalle del proyecto, antes de generar la cotización.</p>
           <div className="border rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
             <div className="grid grid-cols-2 gap-2">
               <Field label="Código del cliente" value={itemDraft.client_item_code} onChange={v => setItemDraft({ ...itemDraft, client_item_code: v })} />
@@ -614,13 +741,19 @@ export function Proyectos() {
               <Field label="Markup (%)" type="number" value={itemDraft.markup_percent} onChange={v => setItemDraft({ ...itemDraft, markup_percent: v })} />
             </div>
             <div className="text-xs text-[#5B6670]">Precio propuesto al cliente: <b className="text-[#0F2647]">Bs {money((Number(itemDraft.estimated_unit_cost) || 0) * (1 + (Number(itemDraft.markup_percent) || 0) / 100))}</b></div>
-            <button onClick={addItemDraft} className="w-full py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={14} className="inline mr-1" />Agregar ítem</button>
+            <div className="flex gap-2">
+              <button onClick={addItemDraft} className="flex-1 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm">{editingDraftIndex !== null ? <><Check size={14} className="inline mr-1" />Actualizar ítem</> : <><Plus size={14} className="inline mr-1" />Agregar ítem</>}</button>
+              {editingDraftIndex !== null && <button onClick={cancelDraftEdit} className="px-4 py-2 rounded-xl border text-sm">Cancelar</button>}
+            </div>
           </div>
 
           <div className="max-h-64 overflow-auto divide-y">
             {newItems.map((i, idx) => <div key={idx} className="py-2 flex justify-between gap-2 text-sm">
               <div><b>{i.client_item_code || "s/c"}</b> · {i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}</div></div>
-              <button onClick={() => setNewItems(newItems.filter((_, x) => x !== idx))}><Trash2 size={15} className="text-red-600" /></button>
+              <div className="flex gap-2 shrink-0">
+                <button onClick={() => editDraftItem(idx)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
+                <button onClick={() => { setNewItems(newItems.filter((_, x) => x !== idx)); if (editingDraftIndex === idx) cancelDraftEdit(); }}><Trash2 size={15} className="text-red-600" /></button>
+              </div>
             </div>)}
             {newItems.length === 0 && <div className="text-sm italic text-[#5B6670] py-4 text-center">Aún no agregaste ítems.</div>}
           </div>
@@ -640,11 +773,14 @@ export function Proyectos() {
               </div>
               <div className="text-xs text-[#5B6670] mt-1">{current.project_number} · Cliente: {customers.find(c => c.id === current.customer_id)?.name || "—"} · Vendedor: {sellers.find(s => s.id === current.user_id)?.full_name || "—"}</div>
               {current.client_reference && <div className="text-xs text-[#5B6670]">Ref. cliente: {current.client_reference}</div>}
+              {(current.contact_name || current.presentation_at) && <div className="text-xs text-[#5B6670]">{current.contact_name && <>Contacto: {current.contact_name}</>}{current.contact_name && current.presentation_at && " · "}{current.presentation_at && <>Presentación: {formatDateTime(current.presentation_at)}</>}</div>}
             </div>
             <div className="flex flex-wrap gap-2 items-start">
+              <button onClick={() => openEditProject(current)} className="px-3 py-2 rounded-xl border text-[#1B3A6B] text-sm"><Pencil size={14} className="inline mr-1" />Editar proyecto</button>
               {(current.status === "registrado" || current.status === "cotizado") && <button onClick={() => markStatus("ganado")} disabled={!current.quotation_id} title={!current.quotation_id ? "Genera la cotización antes de marcar como ganado" : ""} className="px-3 py-2 rounded-xl border text-green-700 border-green-200 disabled:opacity-40 text-sm"><Check size={14} className="inline mr-1" />Marcar ganado</button>}
               {(current.status === "registrado" || current.status === "cotizado") && <button onClick={() => markStatus("perdido")} className="px-3 py-2 rounded-xl border text-red-700 border-red-200 text-sm"><X size={14} className="inline mr-1" />Marcar perdido</button>}
               {(current.status === "en_compra") && <button onClick={() => markStatus("facturado")} className="px-3 py-2 rounded-xl border text-[#1B3A6B] text-sm">Cerrar proyecto (facturado)</button>}
+              {isAdmin && <button onClick={() => deleteProject(current)} className="px-3 py-2 rounded-xl border text-red-600 border-red-200 text-sm"><Trash2 size={14} className="inline mr-1" />Eliminar</button>}
             </div>
           </div>
         </div>
@@ -685,7 +821,10 @@ export function Proyectos() {
                       </select>
                       {!i.product_id && canManageCatalog && <button onClick={() => { setNewProductOpen(i.id); setNewProductDraft({ sku: i.client_item_code || "", name: i.client_description.slice(0, 80), unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") }); }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
                     </td>
-                    <td><button onClick={() => removeItem(i.id)}><Trash2 size={15} className="text-red-600" /></button></td>
+                    <td><div className="flex gap-2">
+                      <button onClick={() => editExistingItem(i)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
+                      <button onClick={() => removeItem(i.id)}><Trash2 size={15} className="text-red-600" /></button>
+                    </div></td>
                   </tr>;
                 })}
                 {items.length === 0 && <tr><td colSpan={8} className="py-8 text-center italic text-[#5B6670]">Sin ítems registrados.</td></tr>}
@@ -695,7 +834,8 @@ export function Proyectos() {
           <div className="text-sm text-right font-semibold">Total estimado al cliente: Bs {money(itemsSubtotal)}</div>
 
           <div className="border rounded-xl p-3 bg-[#FAFBFC] space-y-2">
-            <div className="text-sm font-semibold text-[#0F2647]">Agregar ítem</div>
+            <div className="text-sm font-semibold text-[#0F2647]">{editingItemId ? "Editar ítem" : "Agregar ítem"}</div>
+            <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente.</p>
             <div className="grid grid-cols-2 gap-2">
               <Field label="Código del cliente" value={itemEditDraft.client_item_code} onChange={v => setItemEditDraft({ ...itemEditDraft, client_item_code: v })} />
               <Field label="Unidad" value={itemEditDraft.unit} onChange={v => setItemEditDraft({ ...itemEditDraft, unit: v })} />
@@ -706,7 +846,10 @@ export function Proyectos() {
               <Field label="Costo estimado" type="number" value={itemEditDraft.estimated_unit_cost} onChange={v => setItemEditDraft({ ...itemEditDraft, estimated_unit_cost: v })} />
               <Field label="Markup (%)" type="number" value={itemEditDraft.markup_percent} onChange={v => setItemEditDraft({ ...itemEditDraft, markup_percent: v })} />
             </div>
-            <button onClick={addItemToProject} className="px-4 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={14} className="inline mr-1" />Agregar</button>
+            <div className="flex gap-2">
+              <button onClick={addItemToProject} className="px-4 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm">{editingItemId ? <><Check size={14} className="inline mr-1" />Guardar cambios</> : <><Plus size={14} className="inline mr-1" />Agregar</>}</button>
+              {editingItemId && <button onClick={cancelItemEdit} className="px-4 py-2 rounded-xl border text-sm">Cancelar</button>}
+            </div>
           </div>
 
           {newProductOpen && <Modal title="Crear producto para este ítem" onClose={() => setNewProductOpen(null)}>
@@ -877,6 +1020,24 @@ export function Proyectos() {
           </table>
         </div>
       </div>}
+
+      {editProjectOpen && <Modal title={`Editar proyecto — ${editProjectTarget?.project_number ?? ""}`} onClose={() => setEditProjectOpen(false)}>
+        <div className="space-y-3">
+          <Field label="Nombre del proyecto" value={editProjectDraft.name} onChange={v => setEditProjectDraft({ ...editProjectDraft, name: v })} />
+          <Field label="Referencia del cliente / licitación" value={editProjectDraft.client_reference} onChange={v => setEditProjectDraft({ ...editProjectDraft, client_reference: v })} />
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-xs text-[#5B6670]">Cliente<select value={editProjectDraft.customer_id} onChange={e => setEditProjectDraft({ ...editProjectDraft, customer_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="block text-xs text-[#5B6670]">Vendedor asignado<select value={editProjectDraft.user_id} onChange={e => setEditProjectDraft({ ...editProjectDraft, user_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Nombre de contacto (cotización)" value={editProjectDraft.contact_name} onChange={v => setEditProjectDraft({ ...editProjectDraft, contact_name: v })} />
+            <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={editProjectDraft.presentation_at} onChange={e => setEditProjectDraft({ ...editProjectDraft, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+          </div>
+          <Field label="Comisión variable (%)" type="number" value={editProjectDraft.commission_percent} onChange={v => setEditProjectDraft({ ...editProjectDraft, commission_percent: v })} />
+          <label className="block text-xs text-[#5B6670]">Observaciones<textarea rows={3} value={editProjectDraft.observations} onChange={e => setEditProjectDraft({ ...editProjectDraft, observations: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+          <button disabled={saving} onClick={saveEditProject} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Guardar cambios"}</button>
+        </div>
+      </Modal>}
     </div>
   </Layout>;
 }
