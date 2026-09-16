@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Home, Users, MapPin, Target, CalendarClock, BarChart3, Settings,
-  Plus, LogOut, Package, UserCog, FileText, ShoppingBag, WalletCards,
+  Plus, LogOut, Package, UserCog, FileText, ShoppingBag, WalletCards, Briefcase,
 } from "lucide-react";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
@@ -17,6 +17,7 @@ const NAV = [
   { to: "/cotizaciones", label: "Cotizaciones", icon: FileText },
   { to: "/ventas", label: "Ventas", icon: ShoppingBag },
   { to: "/cobranza", label: "Cobranza", icon: WalletCards },
+  { to: "/proyectos", label: "Proyectos", icon: Briefcase },
 ];
 
 export function Layout({ children, title, subtitle }: { children: ReactNode; title: string; subtitle?: string }) {
