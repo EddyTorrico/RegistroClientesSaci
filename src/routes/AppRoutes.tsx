@@ -12,6 +12,7 @@ import { Cotizaciones } from "../pages/Cotizaciones";
 import { Productos } from "../pages/Productos";
 import { Ventas } from "../pages/Ventas";
 import { Cobranza } from "../pages/Cobranza";
+import { Proyectos } from "../pages/Proyectos";
 import { ProtectedRoute } from "../components/ProtectedRoute";
 
 export function AppRoutes() {
@@ -28,6 +29,7 @@ export function AppRoutes() {
       <Route path="/cotizaciones" element={<ProtectedRoute><Cotizaciones /></ProtectedRoute>} />
       <Route path="/ventas" element={<ProtectedRoute><Ventas /></ProtectedRoute>} />
       <Route path="/cobranza" element={<ProtectedRoute><Cobranza /></ProtectedRoute>} />
+      <Route path="/proyectos" element={<ProtectedRoute><Proyectos /></ProtectedRoute>} />
       <Route path="/mapa" element={<ProtectedRoute><Mapa /></ProtectedRoute>} />
       <Route path="/admin/usuarios" element={<ProtectedRoute allowedRoles={["admin"]}><AdminUsuarios /></ProtectedRoute>} />
       <Route path="*" element={<Navigate to="/dashboard" replace />} />
