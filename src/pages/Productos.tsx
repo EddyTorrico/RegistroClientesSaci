@@ -55,6 +55,7 @@ export function Productos() {
   const [categories, setCategories] = useState<any[]>([]);
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("Todas");
+  const [showProjectPending, setShowProjectPending] = useState(false);
   const [section, setSection] = useState<"products" | "inventory">("products");
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -233,6 +234,30 @@ export function Productos() {
     await load();
   }
 
+  async function deleteProduct(p: any) {
+    setError("");
+    const { count: movCount } = await supabase
+      .from("inventory_movements")
+      .select("id", { count: "exact", head: true })
+      .eq("product_id", p.product_id);
+
+    const warning = movCount
+      ? ` Este producto tiene ${movCount} movimiento(s) de inventario registrados — eliminarlo también borrará ese historial de forma permanente.`
+      : "";
+    if (!window.confirm(`¿Eliminar el producto ${p.sku} · ${p.name}?${warning} Esta acción no se puede deshacer. Si solo quieres que deje de estar disponible para cotizar o vender, es más seguro desactivarlo (editar → desmarcar "Activo").`)) return;
+
+    const { error } = await supabase.from("products").delete().eq("id", p.product_id);
+    if (error) {
+      if (error.code === "23503") {
+        setError(`No se puede eliminar "${p.name}": está usado en cotizaciones, ventas o compras de proyecto ya registradas. Desactívalo en lugar de eliminarlo (editar → desmarcar "Activo").`);
+      } else {
+        setError(error.message);
+      }
+      return;
+    }
+    await load();
+  }
+
   async function saveProduct() {
     setError("");
     if (!profile || !form.sku.trim() || !form.name.trim()) {
@@ -336,8 +361,10 @@ export function Productos() {
 
   const rows = useMemo(() => products.filter(p => {
     const text = `${p.sku} ${p.name} ${p.brand || ""}`.toLowerCase();
-    return text.includes(q.toLowerCase()) && (categoryId === "Todas" || p.category_id === categoryId);
-  }), [products, q, categoryId]);
+    return text.includes(q.toLowerCase())
+      && (categoryId === "Todas" || p.category_id === categoryId)
+      && (showProjectPending || !p.is_project_product);
+  }), [products, q, categoryId, showProjectPending]);
 
   const filteredInventoryMovements = useMemo(() => {
     const needle = invSearch.trim().toLowerCase();
@@ -391,6 +418,10 @@ export function Productos() {
           </select>
           {canEdit && <button onClick={newProduct} className="px-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={15} className="inline mr-1"/>Nuevo producto</button>}
         </div>
+        <label className="flex items-center gap-2 text-xs text-[#5B6670]">
+          <input type="checkbox" checked={showProjectPending} onChange={e => setShowProjectPending(e.target.checked)} />
+          Mostrar productos de proyecto pendientes de compra (aún no ingresaron a inventario)
+        </label>
 
         <div className="bg-white rounded-2xl p-5 overflow-x-auto" style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06), 0 1px 12px rgba(15,38,71,0.04)" }}>
           <table className="w-full text-sm">
@@ -399,7 +430,7 @@ export function Productos() {
               {rows.map(p => <tr key={p.product_id} className="border-b hover:bg-[#FAFBFC]">
                 <td className="py-2.5">{p.image_url ? <img src={p.image_url} alt={p.name} className="w-11 h-11 object-contain rounded-lg border bg-white"/> : <div className="w-11 h-11 rounded-lg border flex items-center justify-center text-[#9AA4AF]"><ImagePlus size={17}/></div>}</td>
                 <td className="font-mono text-xs">{p.sku}</td>
-                <td className="font-medium text-[#0F2647]">{p.name}</td>
+                <td className="font-medium text-[#0F2647]">{p.name}{p.is_project_product && <span className="ml-2 align-middle text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Pendiente de compra</span>}</td>
                 <td>{p.brand || "—"}</td>
                 <td>{categoryPath(p.category_id)}</td>
                 <td className="text-right whitespace-nowrap">Bs {money(p.sale_price)}</td>
@@ -408,6 +439,7 @@ export function Productos() {
                   <button title="Editar producto" onClick={() => editProduct(p)} className="text-[#1B3A6B]"><Pencil size={16}/></button>
                   <button title="Movimiento de stock" onClick={() => { setMov({ ...emptyMov, product_id: p.product_id }); setMovementOpen(true); }} className="text-[#1B3A6B]"><PackagePlus size={16}/></button>
                   <button title="Historial" onClick={() => showHistory(p)} className="text-[#5B6670]"><History size={16}/></button>
+                  <button title="Eliminar producto" onClick={() => deleteProduct(p)} className="text-red-600"><Trash2 size={16}/></button>
                 </div></td>}
               </tr>)}
               {rows.length === 0 && <tr><td colSpan={canEdit ? 8 : 7} className="py-8 text-center italic text-[#5B6670]">No se encontraron productos.</td></tr>}
