@@ -17,7 +17,7 @@ export interface SaleItem { id:string; sale_id:string; product_id:string; sku:st
 
 // Fase 9 — Proyectos
 export type ProjectStatus = "registrado"|"cotizado"|"ganado"|"perdido"|"en_compra"|"facturado";
-export interface Project { id:string; project_number:string; name:string; client_reference:string|null; customer_id:string; user_id:string; status:ProjectStatus; commission_percent:number|null; commission_amount:number; quotation_id:string|null; sale_id:string|null; observations:string|null; created_by:string|null; created_at:string; updated_at:string; }
+export interface Project { id:string; project_number:string; name:string; client_reference:string|null; customer_id:string; user_id:string; status:ProjectStatus; commission_percent:number|null; commission_amount:number; quotation_id:string|null; sale_id:string|null; observations:string|null; contact_name:string|null; presentation_at:string|null; created_by:string|null; created_at:string; updated_at:string; }
 export interface ProjectItem { id:string; project_id:string; product_id:string|null; client_item_code:string|null; client_description:string; internal_description:string|null; unit:string|null; requested_quantity:number; estimated_unit_cost:number; markup_percent:number|null; proposed_unit_price:number; created_at:string; }
 export interface ProjectPurchase { id:string; project_id:string; supplier:string; purchase_date:string; has_invoice:boolean; invoice_number:string|null; invoice_amount:number|null; notes:string|null; created_by:string|null; created_at:string; }
 export interface ProjectPurchaseItem { id:string; purchase_id:string; project_item_id:string|null; product_id:string; quantity:number; unit_cost:number; }
