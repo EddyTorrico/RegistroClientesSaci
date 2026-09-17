@@ -6,6 +6,7 @@ import { supabase } from "../lib/supabase";
 import {
   Plus, Search, Eye, Trash2, Check, X, ShoppingBag, Package,
   Truck, Receipt, Upload, BarChart3, ClipboardList, ExternalLink, Pencil,
+  RefreshCw, FileText, Paperclip,
 } from "lucide-react";
 
 const moneyFmt = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -54,6 +55,28 @@ const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: tr
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
 const emptyExpense = { expense_type: "transporte", description: "", amount: "", has_invoice: false, invoice_number: "" };
 const emptyNewProduct = { sku: "", name: "", brand: "", unit: "unidad", purchase_price: "", sale_price: "" };
+const emptyInvoice = { invoice_number: "", issue_date: isoToday(), due_date: "", amount: "", status: "pendiente" as "pendiente" | "pagada", notes: "" };
+
+function invoiceAlertLevel(inv: any): "vencida" | "por_vencer" | "al_dia" | "sin_fecha" | "pagada" {
+  if (inv.status === "pagada") return "pagada";
+  if (!inv.due_date) return "sin_fecha";
+  const today = new Date(isoToday());
+  const due = new Date(inv.due_date.slice(0, 10));
+  const diffDays = Math.round((due.getTime() - today.getTime()) / 86400000);
+  if (diffDays < 0) return "vencida";
+  if (diffDays <= 7) return "por_vencer";
+  return "al_dia";
+}
+const INVOICE_ALERT_BADGE: Record<string, string> = {
+  vencida: "bg-red-100 text-red-700",
+  por_vencer: "bg-amber-100 text-amber-700",
+  al_dia: "bg-green-100 text-green-700",
+  sin_fecha: "bg-slate-100 text-slate-600",
+  pagada: "bg-[#0F2647]/10 text-[#0F2647]",
+};
+const INVOICE_ALERT_LABEL: Record<string, string> = {
+  vencida: "Vencida", por_vencer: "Por vencer", al_dia: "Al día", sin_fecha: "Sin fecha", pagada: "Pagada",
+};
 
 function ProductPickerBox({ products, onSelect, placeholder }: { products: any[]; onSelect: (p: any) => void; placeholder?: string }) {
   const [q, setQ] = useState("");
@@ -108,11 +131,12 @@ export function Proyectos() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const [current, setCurrent] = useState<any>(null);
-  const [detailTab, setDetailTab] = useState<"items" | "cotizacion" | "compras" | "gastos" | "documentos" | "rentabilidad">("items");
+  const [detailTab, setDetailTab] = useState<"items" | "cotizacion" | "compras" | "gastos" | "documentos" | "facturacion" | "rentabilidad">("items");
   const [items, setItems] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [documents, setDocuments] = useState<any[]>([]);
+  const [invoices, setInvoices] = useState<any[]>([]);
   const [profitability, setProfitability] = useState<any>(null);
   const [linkedSale, setLinkedSale] = useState<any>(null);
   const [quotationPreview, setQuotationPreview] = useState<{ quotation_number: string; subtotal: number; discount: number; total: number; items: any[] } | null>(null);
@@ -121,15 +145,21 @@ export function Proyectos() {
   const [purchaseOpen, setPurchaseOpen] = useState(false);
   const [purchaseDraft, setPurchaseDraft] = useState(emptyPurchase);
   const [purchaseItems, setPurchaseItems] = useState<any[]>([{ ...emptyPurchaseItem }]);
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(emptyExpense);
   const [docType, setDocType] = useState<"cotizacion_externa" | "factura_compra" | "factura_venta" | "otro">("cotizacion_externa");
   const [docDescription, setDocDescription] = useState("");
   const [docFile, setDocFile] = useState<File | null>(null);
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceDraft, setInvoiceDraft] = useState(emptyInvoice);
+  const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
+  const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
   const [newProductOpen, setNewProductOpen] = useState<string | null>(null);
   const [newProductDraft, setNewProductDraft] = useState(emptyNewProduct);
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
+  const [invoiceAlertsAll, setInvoiceAlertsAll] = useState<any[]>([]);
 
   useEffect(() => {
     if (profile?.id) {
@@ -140,11 +170,12 @@ export function Proyectos() {
 
   async function load() {
     setError("");
-    const [p, c, s, pr] = await Promise.all([
+    const [p, c, s, pr, ia] = await Promise.all([
       supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false }),
       supabase.from("customers").select("id,name,address").order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,is_project_product").eq("active", true).order("name"),
+      supabase.from("project_invoice_alerts").select("project_id,alert_level"),
     ]);
     const firstError = p.error || c.error || s.error || pr.error;
     if (firstError) setError(firstError.message);
@@ -152,6 +183,7 @@ export function Proyectos() {
     setCustomers(c.data ?? []);
     setSellers(s.data ?? []);
     setProducts(pr.data ?? []);
+    setInvoiceAlertsAll(ia.data ?? []);
   }
 
   async function reloadProjects() {
@@ -167,6 +199,22 @@ export function Proyectos() {
       return okStatus && (!needle || text.includes(needle));
     });
   }, [projects, search, statusFilter]);
+
+  const invoiceAlertCount = useMemo(
+    () => invoices.filter(i => { const lvl = invoiceAlertLevel(i); return lvl === "vencida" || lvl === "por_vencer"; }).length,
+    [invoices]
+  );
+
+  const canManageInvoices = isAdmin || profile?.role === "gerente" || (!!current && !!profile && current.user_id === profile.id);
+
+  const projectInvoiceAlert = useMemo(() => {
+    const map = new Map<string, "vencida" | "por_vencer">();
+    for (const row of invoiceAlertsAll) {
+      if (row.alert_level !== "vencida" && row.alert_level !== "por_vencer") continue;
+      if (row.alert_level === "vencida" || map.get(row.project_id) !== "vencida") map.set(row.project_id, row.alert_level);
+    }
+    return map;
+  }, [invoiceAlertsAll]);
 
   function resetNewProject() {
     setError("");
@@ -330,18 +378,21 @@ export function Proyectos() {
     setLoading(true);
     setError("");
     try {
-      const [i, pu, ex, doc] = await Promise.all([
+      const [i, pu, ex, doc, inv] = await Promise.all([
         supabase.from("project_items").select("id,project_id,product_id,client_item_code,client_description,internal_description,unit,requested_quantity,estimated_unit_cost,markup_percent,proposed_unit_price,created_at").eq("project_id", p.id).order("created_at"),
         supabase.from("project_purchases").select("id,project_id,supplier,purchase_date,has_invoice,invoice_number,invoice_amount,notes,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
         supabase.from("project_expenses").select("id,project_id,expense_type,description,amount,has_invoice,invoice_number,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
         supabase.from("project_documents").select("id,project_id,document_type,file_url,description,uploaded_by,uploaded_at").eq("project_id", p.id).order("uploaded_at", { ascending: false }),
+        supabase.from("project_invoices").select("id,project_id,invoice_number,issue_date,due_date,amount,status,file_url,notes,created_at").eq("project_id", p.id).order("due_date", { ascending: true, nullsFirst: false }),
       ]);
       if (i.error) throw i.error;
       if (pu.error) throw pu.error;
       if (ex.error) throw ex.error;
       if (doc.error) throw doc.error;
+      if (inv.error) throw inv.error;
 
       setItems(i.data ?? []);
+      setInvoices(inv.data ?? []);
 
       const purchaseRows = pu.data ?? [];
       let purchaseItemRows: any[] = [];
@@ -467,11 +518,24 @@ export function Proyectos() {
     await loadDetail(current);
   }
 
+  async function syncItemCodeFromProduct(itemId: string, sku: string) {
+    if (!sku) return;
+    const { error: e } = await supabase.from("project_items").update({ client_item_code: sku }).eq("id", itemId);
+    if (e) { setError(e.message); return; }
+    await loadDetail(current);
+  }
+
   async function createProductForItem(item: any) {
     if (!profile) return;
     setError("");
     if (!newProductDraft.sku.trim() || !newProductDraft.name.trim()) {
       setError("Indica código SACIPETROL y nombre del producto nuevo.");
+      return;
+    }
+    const skuNeedle = newProductDraft.sku.trim().toLowerCase();
+    const existing = products.find((p: any) => (p.sku || "").trim().toLowerCase() === skuNeedle);
+    if (existing) {
+      setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}" (${existing.name}). Usa el buscador de arriba para vincularlo en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
       return;
     }
     try {
@@ -495,7 +559,11 @@ export function Proyectos() {
       setNewProductOpen(null);
       setNewProductDraft(emptyNewProduct);
     } catch (e: any) {
-      setError(e.message || "No fue posible crear el producto.");
+      if (e?.code === "23505" || /products_sku_unique/i.test(e?.message || "")) {
+        setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}". Usa el buscador de arriba para vincularlo en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
+      } else {
+        setError(e.message || "No fue posible crear el producto.");
+      }
     }
   }
 
@@ -573,6 +641,28 @@ export function Proyectos() {
     await refreshCurrentProject();
   }
 
+  async function refreshProfitability() {
+    if (!current) return;
+    setLoading(true);
+    setError("");
+    try {
+      // Si ya existe una venta generada desde la cotización de este proyecto
+      // pero todavía no quedó vinculada (por ejemplo, se convirtió a venta
+      // desde Ventas y no se apretó "Vincular al proyecto"), se vincula sola
+      // aquí — sin tocar el estado del proyecto — para que Rentabilidad jale
+      // el total de ventas real.
+      if (current.quotation_id && !current.sale_id) {
+        const { data: sale } = await supabase.from("sales").select("id").eq("quotation_id", current.quotation_id).maybeSingle();
+        if (sale) {
+          await supabase.from("projects").update({ sale_id: sale.id }).eq("id", current.id);
+        }
+      }
+      await refreshCurrentProject();
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function addPurchaseItemRow() { setPurchaseItems([...purchaseItems, { ...emptyPurchaseItem }]); }
   function removePurchaseItemRow(idx: number) { setPurchaseItems(purchaseItems.filter((_, i) => i !== idx)); }
   function updatePurchaseItemRow(idx: number, patch: any) {
@@ -591,8 +681,40 @@ export function Proyectos() {
   function openPurchaseModal() {
     setPurchaseDraft(emptyPurchase);
     setPurchaseItems([{ ...emptyPurchaseItem }]);
+    setEditingPurchaseId(null);
     setError("");
     setPurchaseOpen(true);
+  }
+
+  function openEditPurchase(p: any) {
+    setPurchaseDraft({
+      supplier: p.supplier || "",
+      purchase_date: (p.purchase_date || isoToday()).slice(0, 10),
+      has_invoice: !!p.has_invoice,
+      invoice_number: p.invoice_number || "",
+      invoice_amount: String(p.invoice_amount ?? ""),
+      notes: p.notes || "",
+    });
+    setPurchaseItems((p.items || []).length
+      ? p.items.map((it: any) => ({
+          project_item_id: it.project_item_id || "",
+          product_id: it.product_id || "",
+          quantity: String(it.quantity ?? "1"),
+          unit_cost: String(it.unit_cost ?? "0"),
+        }))
+      : [{ ...emptyPurchaseItem }]);
+    setEditingPurchaseId(p.id);
+    setError("");
+    setPurchaseOpen(true);
+  }
+
+  async function deletePurchase(p: any) {
+    if (!window.confirm(`¿Eliminar la compra a ${p.supplier} del ${formatDate(p.purchase_date)}? Esto revierte el ingreso a inventario que generó (y, si el producto no tiene otra compra registrada, vuelve a quedar pendiente de compra). Esta acción no se puede deshacer.`)) return;
+    setError("");
+    const { error } = await supabase.from("project_purchases").delete().eq("id", p.id);
+    if (error) { setError(error.message); return; }
+    await refreshCurrentProject();
+    await load();
   }
 
   async function savePurchase() {
@@ -601,22 +723,40 @@ export function Proyectos() {
     if (!purchaseDraft.supplier.trim()) { setError("Indica el proveedor de la compra."); return; }
     const validRows = purchaseItems.filter(r => r.product_id && Number(r.quantity) > 0);
     if (validRows.length === 0) { setError("Agrega al menos un producto con cantidad mayor a cero."); return; }
+    const computedInvoiceAmount = validRows.reduce((s, r) => s + Number(r.quantity) * (Number(r.unit_cost) || 0), 0);
     setSaving(true);
     try {
-      const { data: purchase, error: pe } = await supabase.from("project_purchases").insert({
-        project_id: current.id,
+      const header = {
         supplier: purchaseDraft.supplier.trim(),
         purchase_date: purchaseDraft.purchase_date || isoToday(),
         has_invoice: purchaseDraft.has_invoice,
         invoice_number: purchaseDraft.has_invoice ? (purchaseDraft.invoice_number.trim() || null) : null,
-        invoice_amount: purchaseDraft.has_invoice && purchaseDraft.invoice_amount ? Number(purchaseDraft.invoice_amount) : null,
+        invoice_amount: purchaseDraft.has_invoice ? computedInvoiceAmount : null,
         notes: purchaseDraft.notes.trim() || null,
-        created_by: profile.id,
-      }).select("id").single();
-      if (pe) throw pe;
+      };
+
+      let purchaseId = editingPurchaseId;
+      if (editingPurchaseId) {
+        const { error: ue } = await supabase.from("project_purchases").update(header).eq("id", editingPurchaseId);
+        if (ue) throw ue;
+        // Se borran los ítems anteriores (revierte sus movimientos de
+        // inventario en cascada) y se insertan los nuevos, igual que al
+        // actualizar una cotización — así los triggers de stock y de
+        // "pendiente de compra" quedan siempre consistentes.
+        const { error: de } = await supabase.from("project_purchase_items").delete().eq("purchase_id", editingPurchaseId);
+        if (de) throw de;
+      } else {
+        const { data: purchase, error: pe } = await supabase.from("project_purchases").insert({
+          project_id: current.id,
+          ...header,
+          created_by: profile.id,
+        }).select("id").single();
+        if (pe) throw pe;
+        purchaseId = purchase.id;
+      }
 
       const { error: ie } = await supabase.from("project_purchase_items").insert(validRows.map(r => ({
-        purchase_id: purchase.id,
+        purchase_id: purchaseId,
         project_item_id: r.project_item_id || null,
         product_id: r.product_id,
         quantity: Number(r.quantity),
@@ -624,11 +764,12 @@ export function Proyectos() {
       })));
       if (ie) throw ie;
 
-      if (current.status === "ganado") {
+      if (!editingPurchaseId && current.status === "ganado") {
         await supabase.from("projects").update({ status: "en_compra" }).eq("id", current.id);
       }
 
       setPurchaseOpen(false);
+      setEditingPurchaseId(null);
       await refreshCurrentProject();
       await load();
     } catch (e: any) {
@@ -696,6 +837,108 @@ export function Proyectos() {
     if (data?.signedUrl) window.open(data.signedUrl, "_blank");
   }
 
+  function openInvoiceModal() {
+    setInvoiceDraft(emptyInvoice);
+    setInvoiceFile(null);
+    setEditingInvoiceId(null);
+    setError("");
+    setInvoiceOpen(true);
+  }
+
+  function openEditInvoice(inv: any) {
+    setInvoiceDraft({
+      invoice_number: inv.invoice_number || "",
+      issue_date: (inv.issue_date || isoToday()).slice(0, 10),
+      due_date: (inv.due_date || "").slice(0, 10),
+      amount: String(inv.amount ?? ""),
+      status: inv.status || "pendiente",
+      notes: inv.notes || "",
+    });
+    setInvoiceFile(null);
+    setEditingInvoiceId(inv.id);
+    setError("");
+    setInvoiceOpen(true);
+  }
+
+  function closeInvoiceModal() {
+    setInvoiceOpen(false);
+    setEditingInvoiceId(null);
+    setInvoiceDraft(emptyInvoice);
+    setInvoiceFile(null);
+  }
+
+  async function saveInvoice() {
+    if (!current || !profile) return;
+    setError("");
+    if (!invoiceDraft.amount || Number(invoiceDraft.amount) <= 0) {
+      setError("Indica el monto de la factura.");
+      return;
+    }
+    setSaving(true);
+    try {
+      let file_url: string | null = editingInvoiceId ? (invoices.find(i => i.id === editingInvoiceId)?.file_url ?? null) : null;
+      if (invoiceFile) {
+        const safeName = invoiceFile.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+        const path = `factura_venta/${current.id}/${Date.now()}-${safeName}`;
+        const { error: ue } = await supabase.storage.from("project-documents").upload(path, invoiceFile, { contentType: invoiceFile.type || "application/octet-stream" });
+        if (ue) throw ue;
+        file_url = path;
+      }
+      const payload = {
+        invoice_number: invoiceDraft.invoice_number.trim() || null,
+        issue_date: invoiceDraft.issue_date,
+        due_date: invoiceDraft.due_date || null,
+        amount: Number(invoiceDraft.amount),
+        status: invoiceDraft.status,
+        notes: invoiceDraft.notes.trim() || null,
+        file_url,
+      };
+      if (editingInvoiceId) {
+        const { error: ue2 } = await supabase.from("project_invoices").update(payload).eq("id", editingInvoiceId);
+        if (ue2) throw ue2;
+      } else {
+        const { error: ie } = await supabase.from("project_invoices").insert({ ...payload, project_id: current.id, created_by: profile.id });
+        if (ie) throw ie;
+      }
+      closeInvoiceModal();
+      await loadDetail(current);
+      await refreshInvoiceAlerts();
+    } catch (e: any) {
+      setError(e.message || "No fue posible guardar la factura.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function refreshInvoiceAlerts() {
+    const { data } = await supabase.from("project_invoice_alerts").select("project_id,alert_level");
+    setInvoiceAlertsAll(data ?? []);
+  }
+
+  async function markInvoicePaid(inv: any) {
+    setError("");
+    const { error: e } = await supabase.from("project_invoices").update({ status: "pagada" }).eq("id", inv.id);
+    if (e) { setError(e.message); return; }
+    await loadDetail(current);
+    await refreshInvoiceAlerts();
+  }
+
+  async function deleteInvoice(inv: any) {
+    if (!window.confirm(`¿Eliminar la factura ${inv.invoice_number || "(sin número)"}? Esta acción no se puede deshacer.`)) return;
+    setError("");
+    const { error: e } = await supabase.from("project_invoices").delete().eq("id", inv.id);
+    if (e) { setError(e.message); return; }
+    await loadDetail(current);
+    await refreshInvoiceAlerts();
+  }
+
+  async function viewInvoiceFile(inv: any) {
+    if (!inv.file_url) return;
+    const { data, error: e } = await supabase.storage.from("project-documents").createSignedUrl(inv.file_url, 300);
+    if (e) { setError(e.message); return; }
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  }
+
   async function loadReport() {
     setLoading(true);
     setError("");
@@ -749,7 +992,7 @@ export function Proyectos() {
                   const s = sellers.find(x => x.id === p.user_id);
                   return <tr key={p.id} className="border-b hover:bg-[#FAFBFC]">
                     <td className="py-3 font-mono text-xs font-semibold">{p.project_number}</td>
-                    <td><div className="font-medium text-[#0F2647]">{p.name}</div>{p.client_reference && <div className="text-xs text-[#5B6670]">Ref: {p.client_reference}</div>}</td>
+                    <td><div className="font-medium text-[#0F2647] flex items-center gap-1.5">{p.name}{projectInvoiceAlert.has(p.id) && <span title={projectInvoiceAlert.get(p.id) === "vencida" ? "Tiene factura vencida" : "Tiene factura por vencer"} className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${projectInvoiceAlert.get(p.id) === "vencida" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>{projectInvoiceAlert.get(p.id) === "vencida" ? "Factura vencida" : "Factura por vencer"}</span>}</div>{p.client_reference && <div className="text-xs text-[#5B6670]">Ref: {p.client_reference}</div>}</td>
                     <td>{c?.name || "—"}</td>
                     <td>{s?.full_name || "—"}</td>
                     <td><span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_BADGE[p.status]}`}>{STATUS_LABELS[p.status]}</span></td>
@@ -865,9 +1108,13 @@ export function Proyectos() {
             ["compras", "Compras", Truck],
             ["gastos", "Gastos", Receipt],
             ["documentos", "Documentos", Upload],
+            ["facturacion", "Facturación", FileText],
             ...(isAdmin ? [["rentabilidad", "Rentabilidad", BarChart3]] as any : []),
           ].map(([key, label, Icon]: any) => (
-            <button key={key} onClick={() => setDetailTab(key)} className={`px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><Icon size={14} className="inline mr-1" />{label}</button>
+            <button key={key} onClick={() => setDetailTab(key)} className={`relative px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}>
+              <Icon size={14} className="inline mr-1" />{label}
+              {key === "facturacion" && invoiceAlertCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold align-middle">{invoiceAlertCount}</span>}
+            </button>
           ))}
         </div>
 
@@ -881,7 +1128,18 @@ export function Proyectos() {
                 {items.map(i => {
                   const linkedProduct = products.find(p => p.product_id === i.product_id);
                   return <tr key={i.id} className="border-b align-top">
-                    <td className="py-2 font-mono text-xs">{i.client_item_code || "—"}</td>
+                    <td className="py-2 font-mono text-xs">
+                      {i.client_item_code || "—"}
+                      {!i.client_item_code && linkedProduct?.sku && (
+                        <button
+                          onClick={() => syncItemCodeFromProduct(i.id, linkedProduct.sku)}
+                          className="flex items-center gap-1 text-[10px] text-[#1B3A6B] mt-1 font-sans"
+                          title={`Copiar código del producto vinculado (${linkedProduct.sku})`}
+                        >
+                          <RefreshCw size={11} /> Usar {linkedProduct.sku}
+                        </button>
+                      )}
+                    </td>
                     <td className="min-w-48">{i.client_description}</td>
                     <td className="text-right">{qty(i.requested_quantity)} {i.unit}</td>
                     <td className="text-right">Bs {money(i.estimated_unit_cost)}</td>
@@ -892,7 +1150,11 @@ export function Proyectos() {
                         <option value="">Sin vincular</option>
                         {products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} · {p.name}</option>)}
                       </select>
-                      {!i.product_id && canManageCatalog && <button onClick={() => { setNewProductOpen(i.id); setNewProductDraft({ sku: i.client_item_code || "", name: i.client_description.slice(0, 80), brand: "", unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") }); }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
+                      {!i.product_id && canManageCatalog && <button onClick={() => {
+                        setNewProductOpen(i.id);
+                        const codeTaken = i.client_item_code && products.some((p: any) => (p.sku || "").trim().toLowerCase() === i.client_item_code.trim().toLowerCase());
+                        setNewProductDraft({ sku: codeTaken ? "" : (i.client_item_code || ""), name: i.client_description.slice(0, 80), brand: "", unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") });
+                      }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
                       {linkedProduct?.is_project_product && <div className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-block">Pendiente de compra — aún no visible en catálogo general</div>}
                     </td>
                     <td><div className="flex gap-2">
@@ -1010,9 +1272,13 @@ export function Proyectos() {
           </div>
           <div className="space-y-3">
             {purchases.map(p => <div key={p.id} className="border rounded-xl p-3">
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between text-sm gap-2">
                 <div><b>{p.supplier}</b> · {formatDate(p.purchase_date)} {p.has_invoice ? <span className="text-green-700">· Con factura {p.invoice_number ? `(${p.invoice_number})` : ""}</span> : <span className="text-amber-700">· Sin factura</span>}</div>
-                {p.invoice_amount != null && <div className="font-semibold">Bs {money(p.invoice_amount)}</div>}
+                <div className="flex items-center gap-3 shrink-0">
+                  {p.invoice_amount != null && <div className="font-semibold">Bs {money(p.invoice_amount)}</div>}
+                  {isAdmin && <button title="Editar compra" onClick={() => openEditPurchase(p)} className="text-[#1B3A6B]"><Pencil size={15} /></button>}
+                  {isAdmin && <button title="Eliminar compra" onClick={() => deletePurchase(p)} className="text-red-600"><Trash2 size={15} /></button>}
+                </div>
               </div>
               {p.notes && <div className="text-xs text-[#5B6670] mt-1">{p.notes}</div>}
               <div className="mt-2 text-xs divide-y">
@@ -1025,7 +1291,7 @@ export function Proyectos() {
             {purchases.length === 0 && <div className="text-sm italic text-[#5B6670] text-center py-6">Sin compras registradas.</div>}
           </div>
 
-          {purchaseOpen && <Modal title="Registrar compra" onClose={() => setPurchaseOpen(false)}>
+          {purchaseOpen && <Modal title={editingPurchaseId ? "Editar compra" : "Registrar compra"} onClose={() => { setPurchaseOpen(false); setEditingPurchaseId(null); }}>
             <div className="space-y-3">
               <Field label="Proveedor" value={purchaseDraft.supplier} onChange={v => setPurchaseDraft({ ...purchaseDraft, supplier: v })} />
               <div className="grid grid-cols-2 gap-2">
@@ -1034,7 +1300,7 @@ export function Proyectos() {
               </div>
               {purchaseDraft.has_invoice && <div className="grid grid-cols-2 gap-2">
                 <Field label="N° de factura" value={purchaseDraft.invoice_number} onChange={v => setPurchaseDraft({ ...purchaseDraft, invoice_number: v })} />
-                <Field label="Monto factura" type="number" value={purchaseDraft.invoice_amount} onChange={v => setPurchaseDraft({ ...purchaseDraft, invoice_amount: v })} />
+                <div className="block text-xs text-[#5B6670]">Monto factura<div className="w-full border rounded-xl p-2.5 mt-1 text-sm bg-[#FAFBFC] text-[#0F2647] font-medium">Bs {money(purchaseItems.filter(r => r.product_id && Number(r.quantity) > 0).reduce((s, r) => s + Number(r.quantity) * (Number(r.unit_cost) || 0), 0))}</div><div className="text-[10px] text-[#5B6670] mt-0.5">Se calcula automáticamente: suma de cantidad × costo unitario de los productos comprados.</div></div>
               </div>}
               <Field label="Notas" value={purchaseDraft.notes} onChange={v => setPurchaseDraft({ ...purchaseDraft, notes: v })} />
 
@@ -1050,7 +1316,7 @@ export function Proyectos() {
                 <button onClick={addPurchaseItemRow} className="text-xs text-[#1B3A6B]"><Plus size={13} className="inline mr-1" />Agregar producto</button>
               </div>
 
-              <button disabled={saving} onClick={savePurchase} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar compra"}</button>
+              <button disabled={saving} onClick={savePurchase} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : editingPurchaseId ? "Guardar cambios" : "Registrar compra"}</button>
             </div>
           </Modal>}
         </div>}
@@ -1099,7 +1365,73 @@ export function Proyectos() {
           </div>
         </div>}
 
+        {detailTab === "facturacion" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <div className="text-sm font-semibold text-[#0F2647]">Facturas emitidas al cliente</div>
+            {canManageInvoices && <button onClick={openInvoiceModal} className="px-3 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={14} className="inline mr-1" />Registrar factura</button>}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">N° factura</th><th>Emisión</th><th>Vence</th><th className="text-right">Monto</th><th>Estado</th><th></th></tr></thead>
+              <tbody>
+                {invoices.map(inv => {
+                  const lvl = invoiceAlertLevel(inv);
+                  return <tr key={inv.id} className="border-b align-top">
+                    <td className="py-2 font-mono text-xs">{inv.invoice_number || "—"}</td>
+                    <td className="text-xs">{formatDate(inv.issue_date)}</td>
+                    <td className="text-xs">{formatDate(inv.due_date)}</td>
+                    <td className="text-right font-medium">Bs {money(inv.amount)}</td>
+                    <td>
+                      <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${INVOICE_ALERT_BADGE[lvl]}`}>{INVOICE_ALERT_LABEL[lvl]}</span>
+                      {inv.notes && <div className="text-[11px] text-[#5B6670] mt-1">{inv.notes}</div>}
+                    </td>
+                    <td><div className="flex gap-2 items-center">
+                      {inv.file_url && <button onClick={() => viewInvoiceFile(inv)} title="Ver adjunto"><Paperclip size={15} className="text-[#1B3A6B]" /></button>}
+                      {canManageInvoices && inv.status === "pendiente" && <button onClick={() => markInvoicePaid(inv)} title="Marcar como pagada"><Check size={15} className="text-green-700" /></button>}
+                      {canManageInvoices && <button onClick={() => openEditInvoice(inv)} title="Editar"><Pencil size={15} className="text-[#1B3A6B]" /></button>}
+                      {isAdmin && <button onClick={() => deleteInvoice(inv)} title="Eliminar"><Trash2 size={15} className="text-red-600" /></button>}
+                    </div></td>
+                  </tr>;
+                })}
+                {invoices.length === 0 && <tr><td colSpan={6} className="py-8 text-center italic text-[#5B6670]">Sin facturas registradas.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>}
+
+        {invoiceOpen && <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-20">
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
+            <div className="text-sm font-semibold text-[#0F2647]">{editingInvoiceId ? "Editar factura" : "Registrar factura"}</div>
+            <Field label="N° de factura (opcional)" value={invoiceDraft.invoice_number} onChange={v => setInvoiceDraft({ ...invoiceDraft, invoice_number: v })} />
+            <div className="grid grid-cols-2 gap-2">
+              <label className="block text-xs text-[#5B6670]">Fecha de emisión<input type="date" value={invoiceDraft.issue_date} onChange={e => setInvoiceDraft({ ...invoiceDraft, issue_date: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+              <label className="block text-xs text-[#5B6670]">Fecha de pago esperada<input type="date" value={invoiceDraft.due_date} onChange={e => setInvoiceDraft({ ...invoiceDraft, due_date: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+            </div>
+            <Field label="Monto (Bs)" value={invoiceDraft.amount} onChange={v => setInvoiceDraft({ ...invoiceDraft, amount: v })} type="number" />
+            <label className="block text-xs text-[#5B6670]">Estado<select value={invoiceDraft.status} onChange={e => setInvoiceDraft({ ...invoiceDraft, status: e.target.value as any })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="pendiente">Pendiente</option><option value="pagada">Pagada</option></select></label>
+            <Field label="Notas (opcional)" value={invoiceDraft.notes} onChange={v => setInvoiceDraft({ ...invoiceDraft, notes: v })} />
+            <label className="block text-xs text-[#5B6670]">Adjuntar factura (PDF o imagen, opcional)<input type="file" onChange={e => setInvoiceFile(e.target.files?.[0] || null)} className="w-full border rounded-xl p-2 mt-1 text-sm" /></label>
+            {editingInvoiceId && invoices.find(i => i.id === editingInvoiceId)?.file_url && !invoiceFile && <div className="text-[11px] text-[#5B6670]">Ya tiene un archivo adjunto. Sube uno nuevo solo si quieres reemplazarlo.</div>}
+            {error && <div className="text-sm text-red-600">{error}</div>}
+            <div className="flex gap-2 pt-1">
+              <button onClick={closeInvoiceModal} className="flex-1 py-2.5 rounded-xl border text-sm">Cancelar</button>
+              <button disabled={saving} onClick={saveInvoice} className="flex-1 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : editingInvoiceId ? "Guardar cambios" : "Registrar factura"}</button>
+            </div>
+          </div>
+        </div>}
+
         {detailTab === "rentabilidad" && isAdmin && !loading && <div className="bg-white rounded-2xl p-5">
+          <div className="flex justify-between items-center mb-4">
+            <h3 className="font-semibold text-[#0F2647]">Rentabilidad</h3>
+            <button
+              onClick={refreshProfitability}
+              disabled={loading}
+              className="flex items-center gap-1.5 text-xs font-semibold text-[#1B3A6B] border border-[#1B3A6B]/30 rounded-lg px-3 py-1.5 hover:bg-[#1B3A6B]/5 disabled:opacity-50"
+              title="Recalcular con los últimos datos de ventas, compras y gastos"
+            >
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Actualizar
+            </button>
+          </div>
           {profitability ? <div className="space-y-4">
             <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
               <StatCard label="Ventas" value={profitability.total_ventas} />

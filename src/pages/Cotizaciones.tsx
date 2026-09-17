@@ -43,6 +43,7 @@ export function Cotizaciones() {
   const navigate = useNavigate();
   const isAdmin = profile?.role === "admin";
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingProjectLinked, setEditingProjectLinked] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
@@ -75,7 +76,7 @@ export function Cotizaciones() {
     setError("");
     const [customersResult, productsResult, sellersResult, quotationsResult] = await Promise.all([
       supabase.from("customers").select("id,name,address,city,zone,phone").order("name"),
-      supabase.from("product_inventory").select("product_id,sku,name,brand,unit,sale_price,stock,active,image_url").eq("active", true).order("name"),
+      supabase.from("product_inventory").select("product_id,sku,name,brand,unit,sale_price,stock,active,image_url").eq("active", true).eq("is_project_product", false).order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("quotations").select("id,quotation_number,customer_id,user_id,quotation_date,valid_until,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total,created_at").order("created_at", { ascending: false }),
     ]);
@@ -114,6 +115,7 @@ export function Cotizaciones() {
     setObservations("");
     setError("");
     setEditingId(null);
+    setEditingProjectLinked(false);
     setScreen("new");
   }
 
@@ -166,7 +168,7 @@ export function Cotizaciones() {
         setError(`La cantidad de ${i.sku} debe ser mayor a cero.`);
         return;
       }
-      if (Number(i.quantity) > Number(i.stock)) {
+      if (Number(i.quantity) > Number(i.stock) && !i.is_project_pending && !editingProjectLinked) {
         setError(`Stock insuficiente para ${i.sku}. Disponible: ${qty(i.stock)}.`);
         return;
       }
@@ -265,13 +267,40 @@ export function Cotizaciones() {
         .order("id");
       if (itemError) throw itemError;
 
+      // Si esta cotización pertenece a un proyecto (Proyectos → Cotización /
+      // Venta), es una propuesta para una licitación/pedido especial que
+      // todavía puede no estar comprado — no se le exige stock disponible
+      // para poder actualizarla. El stock sí se exige al convertirla en
+      // venta (Ventas), que es cuando de verdad sale del inventario.
+      const { data: linkedProject } = await supabase.from("projects").select("id").eq("quotation_id", q.id).maybeSingle();
+      setEditingProjectLinked(!!linkedProject);
+
+      // Se busca el stock/estado real en product_inventory (no en el listado
+      // filtrado "products", que ya excluye los productos de proyecto aún
+      // pendientes de compra) para saber, ítem por ítem, si corresponde
+      // exigirle stock disponible al guardar los cambios.
+      const productIds = Array.from(new Set((quoteItems ?? []).map((i: any) => i.product_id).filter(Boolean)));
+      let liveProducts: any[] = [];
+      if (productIds.length) {
+        const { data } = await supabase
+          .from("product_inventory")
+          .select("product_id,brand,unit,stock,is_project_product")
+          .in("product_id", productIds);
+        liveProducts = data ?? [];
+      }
+
       const normalizedItems = (quoteItems ?? []).map((i: any) => {
         const p = products.find((x: any) => x.product_id === i.product_id);
+        const live = liveProducts.find((x: any) => x.product_id === i.product_id);
         return {
           ...i,
-          brand: i.brand || p?.brand || "",
-          unit: i.unit || p?.unit || "unidad",
-          stock: Number(p?.stock || 0),
+          brand: i.brand || p?.brand || live?.brand || "",
+          unit: i.unit || p?.unit || live?.unit || "unidad",
+          stock: Number(live?.stock ?? p?.stock ?? 0),
+          // Ítem de un proyecto que todavía no tuvo una compra real registrada:
+          // no se le exige stock disponible para poder actualizar la cotización
+          // (recién se compra si/cuando se gana el proyecto).
+          is_project_pending: !!live?.is_project_product,
         };
       });
 
@@ -481,6 +510,7 @@ export function Cotizaciones() {
       {screen === "new" && (
         <div className="grid xl:grid-cols-2 gap-5 print:hidden">
           {editingId && <div className="xl:col-span-2 rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">Estás actualizando una cotización existente. Los cambios reemplazan sus productos y totales al guardar.</div>}
+          {editingId && editingProjectLinked && <div className="xl:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">Esta cotización pertenece a un proyecto — no se exige stock disponible para actualizarla (el stock recién se valida cuando se convierta en venta).</div>}
           <div className="bg-white rounded-2xl p-5 space-y-4">
             <div className="grid md:grid-cols-2 gap-3">
               <label className="text-xs text-[#5B6670]">Cliente
@@ -542,11 +572,15 @@ export function Cotizaciones() {
                 <button title="Quitar producto" onClick={() => setItems(items.filter((_, x) => x !== idx))}><Trash2 size={16} className="text-red-600"/></button>
               </div>
               <div className="grid grid-cols-3 gap-2 mt-2">
-                <label className="text-[11px] text-[#5B6670]">Cantidad<input type="number" min="1" max={i.stock} value={i.quantity} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, quantity: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
+                <label className="text-[11px] text-[#5B6670]">Cantidad<input type="number" min="1" max={(i.is_project_pending || editingProjectLinked) ? undefined : i.stock} value={i.quantity} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, quantity: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Precio unitario<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, unit_price: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <div className="text-[11px] text-[#5B6670]">Total<div className="text-sm p-2 mt-1 font-medium">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</div></div>
               </div>
-              <div className="text-xs text-[#5B6670] mt-1">Disponible: {qty(i.stock)} {i.unit}</div>
+              {i.is_project_pending
+                ? <div className="text-xs text-amber-700 mt-1">Producto de proyecto pendiente de compra — todavía no tiene stock real, no se exige disponibilidad para actualizar esta cotización.</div>
+                : editingProjectLinked
+                ? <div className="text-xs text-[#5B6670] mt-1">Disponible: {qty(i.stock)} {i.unit} — al ser una cotización de proyecto no se exige stock disponible para actualizarla.</div>
+                : <div className="text-xs text-[#5B6670] mt-1">Disponible: {qty(i.stock)} {i.unit}</div>}
             </div>)}
 
             <div className="grid md:grid-cols-3 gap-2 mt-4">
