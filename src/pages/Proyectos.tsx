@@ -1042,11 +1042,11 @@ export function Proyectos() {
           <h3 className="font-semibold text-[#0F2647]">Datos del proyecto</h3>
           <label className="block text-xs text-[#5B6670]">Nombre del proyecto<input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ej.: Suministro de transformadores YPFB" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <label className="block text-xs text-[#5B6670]">Referencia del cliente / licitación<input value={form.client_reference} onChange={e => setForm({ ...form, client_reference: e.target.value })} placeholder="Ej.: YPFB-LIC-2026-014" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="block text-xs text-[#5B6670]">Cliente<select value={form.customer_id} onChange={e => setForm({ ...form, customer_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className="block text-xs text-[#5B6670]">Vendedor asignado<select value={form.user_id} onChange={e => setForm({ ...form, user_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Nombre de contacto (cotización)" value={form.contact_name} onChange={v => setForm({ ...form, contact_name: v })} />
             <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={form.presentation_at} onChange={e => setForm({ ...form, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           </div>
@@ -1060,7 +1060,7 @@ export function Proyectos() {
           <div className="border rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
             <label className="block text-xs text-[#5B6670]">Unidad<input value={itemDraft.unit} onChange={e => setItemDraft({ ...itemDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción del ítem (tal como lo pide el cliente)<textarea rows={2} value={itemDraft.client_description} onChange={e => setItemDraft({ ...itemDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemDraft.requested_quantity} onChange={v => setItemDraft({ ...itemDraft, requested_quantity: v })} />
               <Field label="Costo estimado (cotiz. externa)" type="number" value={itemDraft.estimated_unit_cost} onChange={v => setItemDraft({ ...itemDraft, estimated_unit_cost: v })} />
               <Field label="Markup (%)" type="number" value={itemDraft.markup_percent} onChange={v => setItemDraft({ ...itemDraft, markup_percent: v })} />
@@ -1158,7 +1158,7 @@ export function Proyectos() {
             <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente. No hace falta vincular ni crear ningún producto del catálogo todavía — eso se hace recién cuando ganes el proyecto y registres la compra real, en la pestaña Compras.</p>
             <label className="block text-xs text-[#5B6670]">Unidad<input value={itemEditDraft.unit} onChange={e => setItemEditDraft({ ...itemEditDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción<textarea rows={2} value={itemEditDraft.client_description} onChange={e => setItemEditDraft({ ...itemEditDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemEditDraft.requested_quantity} onChange={v => setItemEditDraft({ ...itemEditDraft, requested_quantity: v })} />
               <Field label="Costo estimado" type="number" value={itemEditDraft.estimated_unit_cost} onChange={v => setItemEditDraft({ ...itemEditDraft, estimated_unit_cost: v })} />
               <Field label="Markup (%)" type="number" value={itemEditDraft.markup_percent} onChange={v => setItemEditDraft({ ...itemEditDraft, markup_percent: v })} />
@@ -1176,7 +1176,7 @@ export function Proyectos() {
             <button disabled={saving} onClick={generateQuotation} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Generando..." : "Generar cotización SACIPETROL"}</button>
           </div>}
           {current.quotation_id && <div className="space-y-3">
-            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800 flex items-center justify-between">
+            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800 flex flex-wrap items-center justify-between gap-2">
               <span>Cotización {quotationPreview?.quotation_number ? <b>{quotationPreview.quotation_number}</b> : ""} generada para este proyecto.</span>
               <button onClick={() => navigate("/cotizaciones")} className="text-[#1B3A6B] font-semibold"><ExternalLink size={14} className="inline mr-1" />Ver / imprimir en Cotizaciones</button>
             </div>
@@ -1206,11 +1206,11 @@ export function Proyectos() {
             </div>}
 
             {!current.sale_id && !linkedSale && <button onClick={() => navigate(`/ventas?quotation=${current.quotation_id}`)} className="px-5 py-2.5 rounded-xl border text-[#1B3A6B] text-sm"><ShoppingBag size={15} className="inline mr-1" />Convertir a venta</button>}
-            {!current.sale_id && linkedSale && <div className="rounded-xl bg-green-50 border border-green-100 p-3 text-sm text-green-800 flex items-center justify-between">
+            {!current.sale_id && linkedSale && <div className="rounded-xl bg-green-50 border border-green-100 p-3 text-sm text-green-800 flex flex-wrap items-center justify-between gap-2">
               <span>Se detectó la venta <b>{linkedSale.sale_number}</b> generada desde esta cotización.</span>
               <button onClick={linkSaleToProject} className="text-[#1B3A6B] font-semibold">Vincular al proyecto</button>
             </div>}
-            {current.sale_id && <div className="rounded-xl bg-[#F5F6F8] border p-3 text-sm flex items-center justify-between">
+            {current.sale_id && <div className="rounded-xl bg-[#F5F6F8] border p-3 text-sm flex flex-wrap items-center justify-between gap-2">
               <span>Venta vinculada: <b>{linkedSale?.sale_number || "—"}</b>{linkedSale && <> · Total Bs {money(linkedSale.total)} · Saldo Bs {money(linkedSale.balance)}</>}</span>
               <button onClick={() => navigate("/cobranza")} className="text-[#1B3A6B] font-semibold"><ExternalLink size={14} className="inline mr-1" />Ir a Cobranza</button>
             </div>}
@@ -1218,7 +1218,7 @@ export function Proyectos() {
         </div>}
 
         {detailTab === "compras" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <div className="text-sm text-[#5B6670]">Cada compra registrada da de alta el producto en inventario (movimiento de entrada), igual que una compra normal de mercadería. Pueden registrarse compras parciales de distintos proveedores y en distintos momentos.</div>
             <button onClick={openPurchaseModal} className="px-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm whitespace-nowrap"><Plus size={15} className="inline mr-1" />Registrar compra</button>
           </div>
@@ -1247,11 +1247,11 @@ export function Proyectos() {
           {purchaseOpen && <Modal title={editingPurchaseId ? "Editar compra" : "Registrar compra"} onClose={() => { setPurchaseOpen(false); setEditingPurchaseId(null); }}>
             <div className="space-y-3">
               <Field label="Proveedor" value={purchaseDraft.supplier} onChange={v => setPurchaseDraft({ ...purchaseDraft, supplier: v })} />
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <label className="block text-xs text-[#5B6670]">Fecha<input type="date" value={purchaseDraft.purchase_date} onChange={e => setPurchaseDraft({ ...purchaseDraft, purchase_date: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
-                <label className="flex items-center gap-2 text-sm mt-5"><input type="checkbox" checked={purchaseDraft.has_invoice} onChange={e => setPurchaseDraft({ ...purchaseDraft, has_invoice: e.target.checked })} /> Con factura</label>
+                <label className="flex items-center gap-2 text-sm sm:mt-5"><input type="checkbox" checked={purchaseDraft.has_invoice} onChange={e => setPurchaseDraft({ ...purchaseDraft, has_invoice: e.target.checked })} /> Con factura</label>
               </div>
-              {purchaseDraft.has_invoice && <div className="grid grid-cols-2 gap-2">
+              {purchaseDraft.has_invoice && <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Field label="N° de factura" value={purchaseDraft.invoice_number} onChange={v => setPurchaseDraft({ ...purchaseDraft, invoice_number: v })} />
                 <div className="block text-xs text-[#5B6670]">Monto factura<div className="w-full border rounded-xl p-2.5 mt-1 text-sm bg-[#FAFBFC] text-[#0F2647] font-medium">Bs {money(purchaseItems.filter(r => r.product_id && Number(r.quantity) > 0).reduce((s, r) => s + Number(r.quantity) * (Number(r.unit_cost) || 0), 0))}</div><div className="text-[10px] text-[#5B6670] mt-0.5">Se calcula automáticamente: suma de cantidad × costo unitario de los productos comprados.</div></div>
               </div>}
@@ -1261,7 +1261,7 @@ export function Proyectos() {
               <div className="border-t pt-3">
                 <div className="text-sm font-semibold text-[#0F2647] mb-2">Productos comprados</div>
                 <p className="text-xs text-[#5B6670] mb-2">Aquí es donde se da de alta el producto con su código SACIPETROL, si todavía no existe en el catálogo. Las cantidades son enteras (sin decimales).</p>
-                {purchaseItems.map((row, idx) => <div key={idx} className="grid grid-cols-[1fr_1fr_70px_90px_auto] gap-2 mb-1 items-end">
+                {purchaseItems.map((row, idx) => <div key={idx} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_70px_90px_auto] gap-2 mb-1 items-end">
                   <label className="text-[11px] text-[#5B6670]">Ítem del proyecto (opcional)<select value={row.project_item_id} onChange={e => updatePurchaseItemRow(idx, { project_item_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">—</option>{items.map(i => <option key={i.id} value={i.id}>{i.client_description.slice(0, 24)}</option>)}</select></label>
                   <label className="text-[11px] text-[#5B6670]">Producto<select value={row.product_id} onChange={e => updatePurchaseItemRow(idx, { product_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">Seleccionar...</option>{products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} · {p.name}</option>)}</select></label>
                   <label className="text-[11px] text-[#5B6670]">Cant.<input type="number" min="1" step="1" value={row.quantity} onChange={e => updatePurchaseItemRow(idx, { quantity: Math.max(1, Math.round(Number(e.target.value) || 0)) })} className="w-full border rounded-lg p-2 text-xs mt-1" /></label>
@@ -1271,7 +1271,7 @@ export function Proyectos() {
                     setNewProductOpen(idx);
                     const linkedItem = items.find(i => i.id === row.project_item_id);
                     setNewProductDraft({ sku: "", name: linkedItem ? linkedItem.client_description.slice(0, 80) : "", brand: "", unit: linkedItem?.unit || "unidad", purchase_price: row.unit_cost || "", sale_price: "" });
-                  }} className="col-span-4 text-left text-xs text-[#1B3A6B]">+ Crear producto nuevo (código SACIPETROL)</button>}
+                  }} className="sm:col-span-4 text-left text-xs text-[#1B3A6B]">+ Crear producto nuevo (código SACIPETROL)</button>}
                 </div>)}
                 <button onClick={addPurchaseItemRow} className="text-xs text-[#1B3A6B] mt-2"><Plus size={13} className="inline mr-1" />Agregar producto</button>
               </div>
@@ -1285,7 +1285,7 @@ export function Proyectos() {
               <Field label="Código SACIPETROL" value={newProductDraft.sku} onChange={v => setNewProductDraft({ ...newProductDraft, sku: v })} />
               <Field label="Nombre / Descripción" value={newProductDraft.name} onChange={v => setNewProductDraft({ ...newProductDraft, name: v })} />
               <Field label="Marca" value={newProductDraft.brand} onChange={v => setNewProductDraft({ ...newProductDraft, brand: v })} />
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <Field label="Unidad" value={newProductDraft.unit} onChange={v => setNewProductDraft({ ...newProductDraft, unit: v })} />
                 <Field label="Precio compra" type="number" value={newProductDraft.purchase_price} onChange={v => setNewProductDraft({ ...newProductDraft, purchase_price: v })} />
                 <Field label="Precio venta" type="number" value={newProductDraft.sale_price} onChange={v => setNewProductDraft({ ...newProductDraft, sale_price: v })} />
@@ -1296,7 +1296,7 @@ export function Proyectos() {
         </div>}
 
         {detailTab === "gastos" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <div className="text-sm text-[#5B6670]">Insumos, transporte hasta la entrega y comisiones variables asociadas al proyecto.</div>
             <button onClick={openExpenseModal} className="px-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm whitespace-nowrap"><Plus size={15} className="inline mr-1" />Registrar gasto</button>
           </div>
@@ -1344,7 +1344,7 @@ export function Proyectos() {
         </div>}
 
         {detailTab === "facturacion" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-wrap justify-between items-center gap-2">
             <div className="text-sm font-semibold text-[#0F2647]">Facturas emitidas al cliente</div>
             {canManageInvoices && <button onClick={openInvoiceModal} className="px-3 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={14} className="inline mr-1" />Registrar factura</button>}
           </div>
@@ -1381,7 +1381,7 @@ export function Proyectos() {
           <div className="bg-white rounded-2xl p-5 w-full max-w-md space-y-3 max-h-[90vh] overflow-y-auto">
             <div className="text-sm font-semibold text-[#0F2647]">{editingInvoiceId ? "Editar factura" : "Registrar factura"}</div>
             <Field label="N° de factura (opcional)" value={invoiceDraft.invoice_number} onChange={v => setInvoiceDraft({ ...invoiceDraft, invoice_number: v })} />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label className="block text-xs text-[#5B6670]">Fecha de emisión<input type="date" value={invoiceDraft.issue_date} onChange={e => setInvoiceDraft({ ...invoiceDraft, issue_date: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
               <label className="block text-xs text-[#5B6670]">Fecha de pago esperada<input type="date" value={invoiceDraft.due_date} onChange={e => setInvoiceDraft({ ...invoiceDraft, due_date: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             </div>
@@ -1450,11 +1450,11 @@ export function Proyectos() {
         <div className="space-y-3">
           <Field label="Nombre del proyecto" value={editProjectDraft.name} onChange={v => setEditProjectDraft({ ...editProjectDraft, name: v })} />
           <Field label="Referencia del cliente / licitación" value={editProjectDraft.client_reference} onChange={v => setEditProjectDraft({ ...editProjectDraft, client_reference: v })} />
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label className="block text-xs text-[#5B6670]">Cliente<select value={editProjectDraft.customer_id} onChange={e => setEditProjectDraft({ ...editProjectDraft, customer_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className="block text-xs text-[#5B6670]">Vendedor asignado<select value={editProjectDraft.user_id} onChange={e => setEditProjectDraft({ ...editProjectDraft, user_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s => <option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Nombre de contacto (cotización)" value={editProjectDraft.contact_name} onChange={v => setEditProjectDraft({ ...editProjectDraft, contact_name: v })} />
             <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={editProjectDraft.presentation_at} onChange={e => setEditProjectDraft({ ...editProjectDraft, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           </div>

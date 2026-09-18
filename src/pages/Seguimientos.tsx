@@ -138,14 +138,14 @@ export function Seguimientos() {
   return <Layout title="Seguimientos" subtitle="Prioriza acciones por fecha y encadena el siguiente paso comercial">
     <div className="space-y-5 max-w-4xl">
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">{error}</div>}
-      <div className="grid grid-cols-3 gap-3"><Mini label="Vencidos" value={vencidos} tone="red"/><Mini label="Próximos 3 días" value={proximos} tone="yellow"/><Mini label="Atendidos" value={items.filter(s=>s.completed).length} tone="green"/></div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3"><Mini label="Vencidos" value={vencidos} tone="red"/><Mini label="Próximos 3 días" value={proximos} tone="yellow"/><Mini label="Atendidos" value={items.filter(s=>s.completed).length} tone="green"/></div>
       <Card><div className="flex flex-col md:flex-row gap-3"><div className="relative flex-1"><Search size={16} className="absolute left-3 top-3 text-[#8A929A]"/><input value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar cliente, acción, nota o vendedor..." className="w-full pl-9 pr-3 py-2.5 border rounded-xl text-sm"/></div><select value={filtro} onChange={e=>setFiltro(e.target.value)} className="border rounded-xl px-3 py-2.5 text-sm"><option value="todos">Todos</option><option value="rojo">🔴 Vencidos</option><option value="amarillo">🟡 Próximos</option><option value="verde">🟢 Atendidos / cerrados</option><option value="gris">⚪ Programados</option></select></div></Card>
       <Card><div className="text-sm font-semibold mb-3 text-[#0F2647]">Pendientes ({pendientes.length})</div><Lista lista={pendientes}/></Card>
       <Card><div className="text-sm font-semibold mb-3 text-[#0F2647]">Atendidos / cerrados ({completados.length})</div><Lista lista={completados}/></Card>
     </div>
 
-    {selected && <div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl p-5 w-full max-w-lg">
+    {selected && <div className="fixed inset-0 z-50 bg-black/30 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl w-full sm:max-w-lg p-5 max-h-[90vh] overflow-auto">
         <div className="flex justify-between items-center mb-4"><div><h2 className="font-semibold text-[#0F2647]">Completar seguimiento</h2><div className="text-xs text-[#5B6670]">{selected.customers?.name} · {selected.type}</div></div><button onClick={() => setSelected(null)}><X size={18}/></button></div>
         <div className="grid grid-cols-2 gap-2 mb-4">
           <button onClick={() => setCloseMode("continue")} className={`rounded-xl border p-3 text-sm ${closeMode === "continue" ? "bg-[#1B3A6B] text-white" : "bg-white"}`}>Atendida · continuar</button>

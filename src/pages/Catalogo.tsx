@@ -25,23 +25,23 @@ export function Catalogo() {
 
   return (
     <Layout title="Catálogo">
-      <div className="grid grid-cols-4 gap-5">
-        <div className="col-span-1">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+        <div className="md:col-span-1">
           <div className="text-xs uppercase tracking-wide mb-2 text-[#5B6670]">Categorías</div>
-          <div className="flex flex-col gap-1">
-            <button onClick={() => setCategoriaId("Todas")} className={`text-left px-3 py-1.5 rounded-lg text-sm ${categoriaId === "Todas" ? "bg-[#1B3A6B] text-white" : "text-[#5B6670]"}`}>
+          <div className="flex flex-row md:flex-col gap-1 overflow-x-auto pb-1 md:pb-0">
+            <button onClick={() => setCategoriaId("Todas")} className={`text-left px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${categoriaId === "Todas" ? "bg-[#1B3A6B] text-white" : "text-[#5B6670]"}`}>
               Todas
             </button>
             {categorias.map((c) => (
-              <button key={c.id} onClick={() => setCategoriaId(c.id)} className={`text-left px-3 py-1.5 rounded-lg text-sm ${categoriaId === c.id ? "bg-[#1B3A6B] text-white" : "text-[#5B6670]"}`}>
+              <button key={c.id} onClick={() => setCategoriaId(c.id)} className={`text-left px-3 py-1.5 rounded-lg text-sm whitespace-nowrap ${categoriaId === c.id ? "bg-[#1B3A6B] text-white" : "text-[#5B6670]"}`}>
                 {c.name}
               </button>
             ))}
           </div>
         </div>
 
-        <div className="col-span-3">
-          <div className="bg-white rounded-2xl p-5" style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06), 0 1px 12px rgba(15,38,71,0.04)" }}>
+        <div className="md:col-span-3">
+          <div className="bg-white rounded-2xl p-5 overflow-x-auto" style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06), 0 1px 12px rgba(15,38,71,0.04)" }}>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wide border-b text-[#5B6670]" style={{ borderColor: "#ECEEF1" }}>

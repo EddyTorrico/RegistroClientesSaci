@@ -207,12 +207,12 @@ export function NuevaVisita() {
 
       {step === 3 && <div>
         <div className="flex justify-between mb-3"><b className="text-sm">Productos que consume</b><button onClick={addProd} className="text-sm text-[#1B3A6B]">+ Agregar</button></div>
-        {form.productos.map((p, i) => <div key={i} className="grid grid-cols-5 gap-2 mb-2 p-2 border rounded-xl">
+        {form.productos.map((p, i) => <div key={i} className="grid grid-cols-2 sm:grid-cols-5 gap-2 mb-2 p-2 border rounded-xl">
           <input placeholder="Producto" value={p.descripcion} onChange={e => { const a = [...form.productos]; a[i] = { ...a[i], descripcion: e.target.value }; patch({ productos: a }); }} className="col-span-2 border rounded-lg p-2 text-sm"/>
           <input placeholder="Marca" value={p.marca} onChange={e => { const a = [...form.productos]; a[i] = { ...a[i], marca: e.target.value }; patch({ productos: a }); }} className="border rounded-lg p-2 text-sm"/>
           <input type="number" placeholder="Volumen" value={p.cantidad} onChange={e => { const a = [...form.productos]; a[i] = { ...a[i], cantidad: e.target.value }; patch({ productos: a }); }} className="border rounded-lg p-2 text-sm"/>
           <select value={p.frecuencia} onChange={e => { const a = [...form.productos]; a[i] = { ...a[i], frecuencia: e.target.value }; patch({ productos: a }); }} className="border rounded-lg p-2 text-sm"><option>Diario</option><option>Semanal</option><option>Quincenal</option><option>Mensual</option><option>Ocasional</option></select>
-          <button onClick={() => patch({ productos: form.productos.filter((_, x) => x !== i) })} className="col-span-5 text-left text-xs text-red-600">Quitar</button>
+          <button onClick={() => patch({ productos: form.productos.filter((_, x) => x !== i) })} className="col-span-2 sm:col-span-5 text-left text-xs text-red-600">Quitar</button>
         </div>)}
         {!form.productos.length && <div className="text-sm italic text-[#5B6670]">Sin productos agregados.</div>}
       </div>}

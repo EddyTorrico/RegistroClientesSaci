@@ -511,18 +511,18 @@ export function Productos() {
           <label className="block text-xs text-[#5B6670]">{editingProduct ? "Cambiar imagen (opcional)" : "Imagen del producto"}<input type="file" accept="image/*" onChange={e => setFile(e.target.files?.[0] || null)} className="w-full border rounded-xl p-2 mt-1 text-sm"/>{file && <div className="text-xs mt-1">Seleccionada: {file.name}</div>}</label>
           <Field label="Código SACIPETROL" value={form.sku} onChange={v => setForm({ ...form, sku: v })} />
           <label className="block text-xs text-[#5B6670]">Nombre / Descripción / Especificaciones<textarea value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} rows={5} className="w-full border rounded-xl p-2.5 mt-1 text-sm"/></label>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Marca" value={form.brand} onChange={v => setForm({ ...form, brand: v })}/>
             <div className="space-y-2">
               <label className="block text-xs text-[#5B6670]">Grupo<div className="flex gap-1 mt-1"><select value={form.group_id} onChange={e => setForm({ ...form, group_id: e.target.value, category_id: "" })} className="w-full border rounded-xl p-2.5 text-sm"><option value="">Sin grupo</option>{groups.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select>{canEdit && <button type="button" title="Administrar grupos y subgrupos" onClick={() => { setSubgroupParentId(form.group_id || groups[0]?.id || ""); setCategoryOpen(true); }} className="px-3 rounded-xl border text-[#1B3A6B]"><Tags size={16}/></button>}</div></label>
               <label className="block text-xs text-[#5B6670]">Subgrupo<select disabled={!form.group_id} value={form.category_id} onChange={e => setForm({ ...form, category_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm disabled:bg-gray-100"><option value="">Sin subgrupo</option>{subgroupsForForm.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Unidad" value={form.unit} onChange={v => setForm({ ...form, unit: v })}/>
             {!editingProduct ? <Field label="Saldo inicial en stock" type="number" value={form.initial_stock} onChange={v => setForm({ ...form, initial_stock: v })}/> : <div className="text-xs text-[#5B6670] border rounded-xl p-3 mt-4">Stock actual: <b>{fmt(editingProduct.stock)}</b>. Para modificarlo use Movimiento de stock.</div>}
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Precio de compra" type="number" value={form.purchase_price} onChange={v => setForm({ ...form, purchase_price: v })}/>
             <Field label="Precio de venta" type="number" value={form.sale_price} onChange={v => setForm({ ...form, sale_price: v })}/>
           </div>

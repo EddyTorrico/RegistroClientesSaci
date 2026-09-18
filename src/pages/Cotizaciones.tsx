@@ -448,7 +448,7 @@ export function Cotizaciones() {
   return <Layout title="Cotizaciones" subtitle="Crea, consulta e imprime cotizaciones comerciales">
     <div className="space-y-4">
       <div className="flex flex-wrap justify-between gap-2 print:hidden">
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <button onClick={() => { setScreen("list"); setSaved(null); setEditingId(null); }} className={`px-4 py-2.5 rounded-xl text-sm border ${screen === "list" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><FileText size={15} className="inline mr-1"/>Cotizaciones guardadas</button>
           <button onClick={resetQuotation} className={`px-4 py-2.5 rounded-xl text-sm border ${screen === "new" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><Plus size={15} className="inline mr-1"/>Nueva cotización</button>
         </div>
@@ -500,13 +500,13 @@ export function Cotizaciones() {
       )}
 
       {screen === "view" && saved && (
-        <div className="bg-white rounded-2xl p-8 max-w-6xl mx-auto print:shadow-none print:p-0">
-          <div className="flex justify-between gap-4 border-b pb-4">
+        <div className="bg-white rounded-2xl p-4 sm:p-8 max-w-6xl mx-auto print:shadow-none print:p-0">
+          <div className="flex flex-col sm:flex-row sm:justify-between gap-4 border-b pb-4">
             <div>
               <h2 className="text-xl font-bold">{COMPANY.name}</h2>
               <div className="text-xs text-[#5B6670]">{COMPANY.address}<br/>{COMPANY.phones}<br/>{COMPANY.email} · {COMPANY.web}</div>
             </div>
-            <div className="text-right">
+            <div className="sm:text-right">
               <div className="font-semibold">COTIZACIÓN</div>
               <div className="font-mono font-semibold">{saved.quotation_number}</div>
               <div>{formatDate(saved.quotation_date)}</div>
@@ -614,7 +614,7 @@ export function Cotizaciones() {
                     <div className="text-[11px] text-[#5B6670]">Para algo que el cliente pide y que todavía no tienes cargado como producto. Se guarda igual, con la descripción que escribas.</div>
                     <input value={manual.description} onChange={e => setManual({ ...manual, description: e.target.value })} placeholder="Descripción del ítem *" className="w-full border rounded-lg p-2 text-sm"/>
                     <input value={manual.clientCode} onChange={e => setManual({ ...manual, clientCode: e.target.value })} placeholder="Código del cliente (opcional)" className="w-full border rounded-lg p-2 text-sm"/>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <input type="number" min="1" value={manual.quantity} onChange={e => setManual({ ...manual, quantity: e.target.value })} placeholder="Cant." className="border rounded-lg p-2 text-sm"/>
                       <input value={manual.unit} onChange={e => setManual({ ...manual, unit: e.target.value })} placeholder="Unidad" className="border rounded-lg p-2 text-sm"/>
                       <input type="number" min="0" step="0.01" value={manual.unitPrice} onChange={e => setManual({ ...manual, unitPrice: e.target.value })} placeholder="Precio unit." className="border rounded-lg p-2 text-sm"/>
@@ -633,16 +633,16 @@ export function Cotizaciones() {
             {items.length === 0 && <div className="border border-dashed rounded-xl p-8 text-center text-sm text-[#5B6670]">Selecciona uno o más productos del listado de la izquierda.</div>}
 
             {items.map((i, idx) => <div key={i.id || i.product_id || `manual-${idx}`} className="border-b py-3">
-              <div className="flex justify-between gap-3 text-sm">
+              <div className="flex flex-wrap justify-between gap-3 text-sm">
                 <span>{i.sku ? <b>{i.sku}</b> : <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle mr-1">SIN CATÁLOGO</span>} · {i.description}<span className="block text-xs text-[#5B6670]">Marca: {i.brand || "—"}</span></span>
                 <button title="Quitar ítem" onClick={() => setItems(items.filter((_, x) => x !== idx))}><Trash2 size={16} className="text-red-600"/></button>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                 <label className="text-[11px] text-[#5B6670]">Cantidad<input type="number" min="1" max={(!i.product_id || i.is_project_pending || editingProjectLinked) ? undefined : i.stock} value={i.quantity} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, quantity: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Precio unitario<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, unit_price: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <div className="text-[11px] text-[#5B6670]">Total<div className="text-sm p-2 mt-1 font-medium">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</div></div>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <label className="text-[11px] text-[#5B6670]">Código del cliente<input value={i.client_item_code || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, client_item_code: e.target.value } : x))} placeholder="Opcional" className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Fecha de entrega<input type="date" value={i.delivery_date || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, delivery_date: e.target.value } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
               </div>

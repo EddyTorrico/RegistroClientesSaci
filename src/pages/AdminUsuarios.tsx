@@ -54,7 +54,7 @@ export function AdminUsuarios() {
 
   return (
     <Layout title="Usuarios" subtitle="Crea y gestiona las cuentas de tu equipo">
-      <div className="grid grid-cols-2 gap-6 max-w-3xl">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 max-w-3xl">
         <div className="bg-white rounded-2xl p-5" style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06)" }}>
           <div className="text-sm font-semibold mb-3 text-[#0F2647]">Registrar nuevo usuario</div>
           {mensaje && <p className="text-sm mb-3 text-[#5B6670]">{mensaje}</p>}

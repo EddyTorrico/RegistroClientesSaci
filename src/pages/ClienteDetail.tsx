@@ -67,7 +67,7 @@ export function ClienteDetail() {
         <ChevronLeft size={16} /> Volver a clientes
       </button>
 
-      <div className="grid grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
         <div className="space-y-5">
           <Card>
             <div className="text-xs uppercase tracking-wide mb-2 text-[#5B6670]">Datos del negocio</div>

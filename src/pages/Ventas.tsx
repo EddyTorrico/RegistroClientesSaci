@@ -423,12 +423,12 @@ export function Ventas() {
             </div>}
 
             {!i.needs_link && <>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
                 <label className="text-[11px]">Cantidad<input type="number" min="0.01" max={i.stock} step="0.01" value={i.quantity} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,quantity:Number(e.target.value)}:x))} className="w-full border rounded-lg p-2 mt-1"/></label>
                 <label className="text-[11px]">Precio<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,unit_price:Number(e.target.value)}:x))} className="w-full border rounded-lg p-2 mt-1"/></label>
                 <div className="text-[11px]">Total<div className="p-2 mt-1 font-medium">Bs {money(Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0))}</div></div>
               </div>
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
                 <label className="text-[11px]">Código cliente (Nº ítem de su OC)<input value={i.client_item_code||""} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,client_item_code:e.target.value}:x))} placeholder="Ej. 30" className="w-full border rounded-lg p-2 mt-1"/></label>
                 <label className="text-[11px]">Fecha de entrega (opcional)<input type="date" value={i.delivery_date||""} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,delivery_date:e.target.value}:x))} className="w-full border rounded-lg p-2 mt-1"/></label>
               </div>
@@ -489,8 +489,8 @@ export function Ventas() {
 
           {showDeliveryForm && <div className="bg-slate-50 border rounded-xl p-3 space-y-2 mb-3">
             <div className="text-xs font-semibold text-[#0F2647]">Nueva nota de entrega</div>
-            {deliveryStatus.filter(st=>Number(st.quantity_pending)>0).map(st=><label key={st.sale_item_id} className="grid grid-cols-3 gap-2 items-center text-xs">
-              <span className="col-span-2">{st.sku} · {st.description}<span className="block text-[10px] text-[#5B6670]">Pendiente: {qty(st.quantity_pending)}</span></span>
+            {deliveryStatus.filter(st=>Number(st.quantity_pending)>0).map(st=><label key={st.sale_item_id} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center text-xs">
+              <span className="sm:col-span-2">{st.sku} · {st.description}<span className="block text-[10px] text-[#5B6670]">Pendiente: {qty(st.quantity_pending)}</span></span>
               <input type="number" min="0" max={st.quantity_pending} step="0.01" value={deliveryQty[st.sale_item_id]||""} onChange={e=>setDeliveryQty({...deliveryQty,[st.sale_item_id]:e.target.value})} placeholder="0" className="border rounded-lg p-2"/>
             </label>)}
             <input value={deliveryReceivedBy} onChange={e=>setDeliveryReceivedBy(e.target.value)} placeholder="Recibido por (opcional)" className="w-full border rounded-lg p-2 text-xs"/>
@@ -516,6 +516,7 @@ export function Ventas() {
       </div>}
 
       {screen==="delivery" && viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
+        <div className="overflow-x-auto">
         <table className="w-full border-collapse border border-black text-sm" style={{fontFamily:"Calibri, Arial, sans-serif"}}>
           <tbody>
             <tr>
@@ -566,6 +567,7 @@ export function Ventas() {
             </tr>
           </tbody>
         </table>
+        </div>
         {viewingDeliveryNote.notes && <div className="mt-4 text-xs print:mt-2"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
         <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
           <button onClick={()=>setScreen("view")} className="px-5 py-2.5 rounded-xl border">Volver a la venta</button>

@@ -152,7 +152,7 @@ export function Clientes() {
           {TIPOS.map(t => <button key={t} type="button" onClick={() => patch({ tipos: toggle(form.tipos, t) })} className={`px-3 py-1.5 rounded-full text-xs border mr-1.5 mb-1.5 ${form.tipos.includes(t) ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#5B6670]"}`}>{t}</button>)}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 mb-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
           <label className="text-xs text-[#5B6670]">Zona
             <input value={form.zona} onChange={e => patch({ zona: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" placeholder="Ej.: Sur" />
           </label>
@@ -165,7 +165,7 @@ export function Clientes() {
           <input value={form.direccion} onChange={e => patch({ direccion: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" />
         </label>
 
-        <div className="grid grid-cols-2 gap-3 mb-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
           <label className="text-xs text-[#5B6670]">Teléfono
             <input value={form.telefono} onChange={e => patch({ telefono: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" />
           </label>
