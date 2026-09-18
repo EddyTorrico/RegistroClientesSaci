@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { supabase } from "../lib/supabase";
-import { ChevronLeft, MapPin, Phone, MessageCircle } from "lucide-react";
+import { ChevronLeft, MapPin, Phone, MessageCircle, Mail } from "lucide-react";
 
 const interesColor: Record<string, string> = { Bajo: "#C0564F", Medio: "#B8863B", Alto: "#3E7A56" };
 const estadoOportunidad: Record<string, { label: string; color: string }> = {
@@ -73,7 +73,7 @@ export function ClienteDetail() {
             <div className="text-xs uppercase tracking-wide mb-2 text-[#5B6670]">Datos del negocio</div>
             <div className="text-lg font-semibold mb-1 text-[#0F2647]">{cliente.name}</div>
             <div className="text-sm text-[#5B6670]">{(cliente.business_types ?? []).join(" + ")}</div>
-            <div className="text-sm flex items-center gap-1 mt-1 text-[#5B6670]"><MapPin size={13} /> {cliente.address || "Sin dirección"}</div><div className="text-sm mt-1 text-[#5B6670]">{cliente.zone || "—"}, {cliente.city || "—"}</div>{cliente.phone && <div className="text-sm mt-1 text-[#5B6670]"><Phone size={13} className="inline mr-1" />{cliente.phone}</div>}<div className="text-xs mt-2 text-[#8A857A]">Registrado: {cliente.created_at ? new Date(cliente.created_at).toLocaleDateString("es-BO") : "—"}</div>
+            <div className="text-sm flex items-center gap-1 mt-1 text-[#5B6670]"><MapPin size={13} /> {cliente.address || "Sin dirección"}</div><div className="text-sm mt-1 text-[#5B6670]">{cliente.zone || "—"}, {cliente.city || "—"}</div>{cliente.phone && <div className="text-sm mt-1 text-[#5B6670]"><Phone size={13} className="inline mr-1" />{cliente.phone}</div>}{cliente.email && <div className="text-sm mt-1 text-[#5B6670]"><Mail size={13} className="inline mr-1" />{cliente.email}</div>}<div className="text-xs mt-2 text-[#8A857A]">Registrado: {cliente.created_at ? new Date(cliente.created_at).toLocaleDateString("es-BO") : "—"}</div>
           </Card>
 
           <Card>

@@ -44,13 +44,9 @@ const STATUS_BADGE: Record<string, string> = {
   en_compra: "bg-amber-100 text-amber-700", facturado: "bg-[#0F2647] text-white",
 };
 const EXPENSE_LABELS: Record<string, string> = { transporte: "Transporte", insumos: "Insumos", comision: "Comisión", otro: "Otro" };
-const DOC_LABELS: Record<string, string> = {
-  cotizacion_externa: "Cotización externa (respaldo)", factura_compra: "Factura de compra",
-  factura_venta: "Factura de venta", otro: "Otro",
-};
 
 const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", presentation_at: "", observations: "" };
-const emptyItemDraft = { client_item_code: "", client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20", product_id: "", brand: "" };
+const emptyItemDraft = { client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
 const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: true, invoice_number: "", invoice_amount: "", notes: "" };
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
 const emptyExpense = { expense_type: "transporte", description: "", amount: "", has_invoice: false, invoice_number: "" };
@@ -146,16 +142,19 @@ export function Proyectos() {
   const [purchaseDraft, setPurchaseDraft] = useState(emptyPurchase);
   const [purchaseItems, setPurchaseItems] = useState<any[]>([{ ...emptyPurchaseItem }]);
   const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null);
+  const [purchaseReceiptFile, setPurchaseReceiptFile] = useState<File | null>(null);
   const [expenseOpen, setExpenseOpen] = useState(false);
   const [expenseDraft, setExpenseDraft] = useState(emptyExpense);
-  const [docType, setDocType] = useState<"cotizacion_externa" | "factura_compra" | "factura_venta" | "otro">("cotizacion_externa");
+  const [expenseReceiptFile, setExpenseReceiptFile] = useState<File | null>(null);
+  const [docTypeText, setDocTypeText] = useState("");
+  const [isBackupQuote, setIsBackupQuote] = useState(false);
   const [docDescription, setDocDescription] = useState("");
   const [docFile, setDocFile] = useState<File | null>(null);
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [invoiceDraft, setInvoiceDraft] = useState(emptyInvoice);
   const [invoiceFile, setInvoiceFile] = useState<File | null>(null);
   const [editingInvoiceId, setEditingInvoiceId] = useState<string | null>(null);
-  const [newProductOpen, setNewProductOpen] = useState<string | null>(null);
+  const [newProductOpen, setNewProductOpen] = useState<number | null>(null);
   const [newProductDraft, setNewProductDraft] = useState(emptyNewProduct);
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
@@ -235,7 +234,6 @@ export function Proyectos() {
     const markup = Number(itemDraft.markup_percent) || 0;
     const built = {
       ...itemDraft,
-      product_id: itemDraft.product_id || null,
       estimated_unit_cost: cost,
       markup_percent: markup,
       requested_quantity: Number(itemDraft.requested_quantity),
@@ -253,14 +251,11 @@ export function Proyectos() {
   function editDraftItem(idx: number) {
     const it = newItems[idx];
     setItemDraft({
-      client_item_code: it.client_item_code || "",
       client_description: it.client_description || "",
       unit: it.unit || "unidad",
       requested_quantity: String(it.requested_quantity ?? "1"),
       estimated_unit_cost: String(it.estimated_unit_cost ?? "0"),
       markup_percent: String(it.markup_percent ?? "20"),
-      product_id: it.product_id || "",
-      brand: it.brand || "",
     });
     setEditingDraftIndex(idx);
     setError("");
@@ -298,8 +293,6 @@ export function Proyectos() {
 
       const { error: ie } = await supabase.from("project_items").insert(newItems.map(i => ({
         project_id: p.id,
-        product_id: i.product_id || null,
-        client_item_code: i.client_item_code.trim() || null,
         client_description: i.client_description.trim(),
         unit: i.unit.trim() || "unidad",
         requested_quantity: i.requested_quantity,
@@ -380,9 +373,9 @@ export function Proyectos() {
     try {
       const [i, pu, ex, doc, inv] = await Promise.all([
         supabase.from("project_items").select("id,project_id,product_id,client_item_code,client_description,internal_description,unit,requested_quantity,estimated_unit_cost,markup_percent,proposed_unit_price,created_at").eq("project_id", p.id).order("created_at"),
-        supabase.from("project_purchases").select("id,project_id,supplier,purchase_date,has_invoice,invoice_number,invoice_amount,notes,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
-        supabase.from("project_expenses").select("id,project_id,expense_type,description,amount,has_invoice,invoice_number,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
-        supabase.from("project_documents").select("id,project_id,document_type,file_url,description,uploaded_by,uploaded_at").eq("project_id", p.id).order("uploaded_at", { ascending: false }),
+        supabase.from("project_purchases").select("id,project_id,supplier,purchase_date,has_invoice,invoice_number,invoice_amount,receipt_url,notes,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
+        supabase.from("project_expenses").select("id,project_id,expense_type,description,amount,has_invoice,invoice_number,receipt_url,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
+        supabase.from("project_documents").select("id,project_id,document_type,is_backup_quote,file_url,description,uploaded_by,uploaded_at").eq("project_id", p.id).order("uploaded_at", { ascending: false }),
         supabase.from("project_invoices").select("id,project_id,invoice_number,issue_date,due_date,amount,status,file_url,notes,created_at").eq("project_id", p.id).order("due_date", { ascending: true, nullsFirst: false }),
       ]);
       if (i.error) throw i.error;
@@ -465,8 +458,6 @@ export function Proyectos() {
     const cost = Number(itemEditDraft.estimated_unit_cost) || 0;
     const markup = Number(itemEditDraft.markup_percent) || 0;
     const payload = {
-      product_id: itemEditDraft.product_id || null,
-      client_item_code: itemEditDraft.client_item_code.trim() || null,
       client_description: itemEditDraft.client_description.trim(),
       unit: itemEditDraft.unit.trim() || "unidad",
       requested_quantity: Number(itemEditDraft.requested_quantity),
@@ -484,16 +475,12 @@ export function Proyectos() {
   }
 
   function editExistingItem(item: any) {
-    const linked = products.find((p: any) => p.product_id === item.product_id);
     setItemEditDraft({
-      client_item_code: item.client_item_code || "",
       client_description: item.client_description || "",
       unit: item.unit || "unidad",
       requested_quantity: String(item.requested_quantity ?? "1"),
       estimated_unit_cost: String(item.estimated_unit_cost ?? "0"),
       markup_percent: String(item.markup_percent ?? "20"),
-      product_id: item.product_id || "",
-      brand: linked?.brand || "",
     });
     setEditingItemId(item.id);
     setError("");
@@ -512,20 +499,12 @@ export function Proyectos() {
     await loadDetail(current);
   }
 
-  async function linkItemProduct(itemId: string, productId: string) {
-    const { error: e } = await supabase.from("project_items").update({ product_id: productId || null }).eq("id", itemId);
-    if (e) { setError(e.message); return; }
-    await loadDetail(current);
-  }
+  // El código SACIPETROL (products.sku) ya no se crea ni se vincula desde
+  // Ítems ni desde la Cotización — recién se da de alta cuando el proyecto se
+  // gana y se registra la compra real (ver createProductForPurchaseRow, en
+  // la pestaña Compras).
 
-  async function syncItemCodeFromProduct(itemId: string, sku: string) {
-    if (!sku) return;
-    const { error: e } = await supabase.from("project_items").update({ client_item_code: sku }).eq("id", itemId);
-    if (e) { setError(e.message); return; }
-    await loadDetail(current);
-  }
-
-  async function createProductForItem(item: any) {
+  async function createProductForPurchaseRow(idx: number) {
     if (!profile) return;
     setError("");
     if (!newProductDraft.sku.trim() || !newProductDraft.name.trim()) {
@@ -535,7 +514,7 @@ export function Proyectos() {
     const skuNeedle = newProductDraft.sku.trim().toLowerCase();
     const existing = products.find((p: any) => (p.sku || "").trim().toLowerCase() === skuNeedle);
     if (existing) {
-      setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}" (${existing.name}). Usa el buscador de arriba para vincularlo en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
+      setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}" (${existing.name}). Usa el selector de producto en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
       return;
     }
     try {
@@ -544,23 +523,21 @@ export function Proyectos() {
         name: newProductDraft.name.trim(),
         brand: newProductDraft.brand.trim() || null,
         unit: newProductDraft.unit.trim() || "unidad",
-        purchase_price: Number(newProductDraft.purchase_price) || Number(item.estimated_unit_cost) || 0,
-        sale_price: Number(newProductDraft.sale_price) || Number(item.proposed_unit_price) || 0,
+        purchase_price: Number(newProductDraft.purchase_price) || 0,
+        sale_price: Number(newProductDraft.sale_price) || 0,
         active: true,
-        // Nace como pendiente: no se mezcla con el catálogo general ni con los
-        // selectores de Cotizaciones/Ventas para otros clientes hasta que se
-        // registre una compra real (Proyectos → Compras), momento en el que
-        // pasa a ser inventario de verdad automáticamente.
-        is_project_product: true,
+        // Se crea directamente como producto real: nace de una compra real
+        // que se está registrando ahora mismo (is_project_product queda en
+        // su valor por defecto, false).
       }).select("id").single();
       if (pe) throw pe;
-      await linkItemProduct(item.id, newProduct.id);
+      updatePurchaseItemRow(idx, { product_id: newProduct.id });
       await load();
       setNewProductOpen(null);
       setNewProductDraft(emptyNewProduct);
     } catch (e: any) {
       if (e?.code === "23505" || /products_sku_unique/i.test(e?.message || "")) {
-        setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}". Usa el buscador de arriba para vincularlo en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
+        setError(`Ya existe un producto con el código "${newProductDraft.sku.trim()}". Usa el selector de producto en lugar de crear uno nuevo, o cambia el código SACIPETROL si en verdad es un producto distinto.`);
       } else {
         setError(e.message || "No fue posible crear el producto.");
       }
@@ -571,8 +548,6 @@ export function Proyectos() {
     if (!current) return;
     setError("");
     if (items.length === 0) { setError("El proyecto no tiene ítems."); return; }
-    const missing = items.filter(i => !i.product_id);
-    if (missing.length) { setError("Vincula cada ítem a un producto del catálogo antes de generar la cotización."); return; }
     setSaving(true);
     try {
       const d = new Date();
@@ -591,21 +566,22 @@ export function Proyectos() {
       }).select().single();
       if (qe) throw qe;
 
-      const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => {
-        const prod = products.find(p => p.product_id === i.product_id);
-        return {
-          quotation_id: q.id,
-          product_id: i.product_id,
-          sku: prod?.sku || "",
-          description: i.internal_description || i.client_description,
-          brand: prod?.brand || null,
-          unit: i.unit || "unidad",
-          quantity: Number(i.requested_quantity),
-          unit_price: Number(i.proposed_unit_price),
-          discount: 0,
-          subtotal: Number(i.requested_quantity) * Number(i.proposed_unit_price),
-        };
-      }));
+      // Los ítems todavía no tienen por qué estar vinculados a un producto
+      // del catálogo — se cotizan tal como los pidió el cliente. El vínculo
+      // (y la creación del código SACIPETROL) se hace recién en Compras,
+      // cuando se gana el proyecto y se compra de verdad.
+      const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
+        quotation_id: q.id,
+        product_id: null,
+        sku: null,
+        description: i.internal_description || i.client_description,
+        brand: null,
+        unit: i.unit || "unidad",
+        quantity: Number(i.requested_quantity),
+        unit_price: Number(i.proposed_unit_price),
+        discount: 0,
+        subtotal: Number(i.requested_quantity) * Number(i.proposed_unit_price),
+      })));
       if (ie) throw ie;
 
       const { error: ue } = await supabase.from("projects").update({ quotation_id: q.id, status: "cotizado" }).eq("id", current.id);
@@ -682,6 +658,7 @@ export function Proyectos() {
     setPurchaseDraft(emptyPurchase);
     setPurchaseItems([{ ...emptyPurchaseItem }]);
     setEditingPurchaseId(null);
+    setPurchaseReceiptFile(null);
     setError("");
     setPurchaseOpen(true);
   }
@@ -704,6 +681,7 @@ export function Proyectos() {
         }))
       : [{ ...emptyPurchaseItem }]);
     setEditingPurchaseId(p.id);
+    setPurchaseReceiptFile(null);
     setError("");
     setPurchaseOpen(true);
   }
@@ -726,6 +704,15 @@ export function Proyectos() {
     const computedInvoiceAmount = validRows.reduce((s, r) => s + Number(r.quantity) * (Number(r.unit_cost) || 0), 0);
     setSaving(true);
     try {
+      let receiptUrl: string | null = editingPurchaseId ? (purchases.find(p => p.id === editingPurchaseId)?.receipt_url ?? null) : null;
+      if (purchaseReceiptFile) {
+        const safeName = purchaseReceiptFile.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+        const path = `compras/${current.id}/${Date.now()}-${safeName}`;
+        const { error: ue2 } = await supabase.storage.from("project-documents").upload(path, purchaseReceiptFile, { contentType: purchaseReceiptFile.type || "application/octet-stream" });
+        if (ue2) throw ue2;
+        receiptUrl = path;
+      }
+
       const header = {
         supplier: purchaseDraft.supplier.trim(),
         purchase_date: purchaseDraft.purchase_date || isoToday(),
@@ -733,6 +720,7 @@ export function Proyectos() {
         invoice_number: purchaseDraft.has_invoice ? (purchaseDraft.invoice_number.trim() || null) : null,
         invoice_amount: purchaseDraft.has_invoice ? computedInvoiceAmount : null,
         notes: purchaseDraft.notes.trim() || null,
+        receipt_url: receiptUrl,
       };
 
       let purchaseId = editingPurchaseId;
@@ -759,10 +747,19 @@ export function Proyectos() {
         purchase_id: purchaseId,
         project_item_id: r.project_item_id || null,
         product_id: r.product_id,
-        quantity: Number(r.quantity),
+        quantity: Math.round(Number(r.quantity)),
         unit_cost: Number(r.unit_cost) || 0,
       })));
       if (ie) throw ie;
+
+      // Si la compra viene de un ítem del proyecto, deja registrado en ese
+      // ítem qué producto real (código SACIPETROL) terminó siendo — solo
+      // informativo, no vuelve a exigirse en ningún otro paso.
+      for (const r of validRows) {
+        if (r.project_item_id) {
+          await supabase.from("project_items").update({ product_id: r.product_id }).eq("id", r.project_item_id);
+        }
+      }
 
       if (!editingPurchaseId && current.status === "ganado") {
         await supabase.from("projects").update({ status: "en_compra" }).eq("id", current.id);
@@ -770,6 +767,7 @@ export function Proyectos() {
 
       setPurchaseOpen(false);
       setEditingPurchaseId(null);
+      setPurchaseReceiptFile(null);
       await refreshCurrentProject();
       await load();
     } catch (e: any) {
@@ -779,7 +777,7 @@ export function Proyectos() {
     }
   }
 
-  function openExpenseModal() { setExpenseDraft(emptyExpense); setError(""); setExpenseOpen(true); }
+  function openExpenseModal() { setExpenseDraft(emptyExpense); setExpenseReceiptFile(null); setError(""); setExpenseOpen(true); }
 
   async function saveExpense() {
     if (!current || !profile) return;
@@ -789,6 +787,14 @@ export function Proyectos() {
       return;
     }
     setSaving(true);
+    let receiptUrl: string | null = null;
+    if (expenseReceiptFile) {
+      const safeName = expenseReceiptFile.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
+      const path = `gastos/${current.id}/${Date.now()}-${safeName}`;
+      const { error: ue } = await supabase.storage.from("project-documents").upload(path, expenseReceiptFile, { contentType: expenseReceiptFile.type || "application/octet-stream" });
+      if (ue) { setError(ue.message); setSaving(false); return; }
+      receiptUrl = path;
+    }
     const { error: e } = await supabase.from("project_expenses").insert({
       project_id: current.id,
       expense_type: expenseDraft.expense_type,
@@ -796,6 +802,7 @@ export function Proyectos() {
       amount: Number(expenseDraft.amount),
       has_invoice: expenseDraft.has_invoice,
       invoice_number: expenseDraft.has_invoice ? (expenseDraft.invoice_number.trim() || null) : null,
+      receipt_url: receiptUrl,
       created_by: profile.id,
     });
     setSaving(false);
@@ -806,22 +813,29 @@ export function Proyectos() {
 
   async function uploadDocument() {
     if (!current || !profile || !docFile) { setError("Selecciona un archivo para adjuntar."); return; }
+    if (!docTypeText.trim()) { setError("Indica el tipo de documento (el nombre con el que lo quieres identificar)."); return; }
     setError("");
     setSaving(true);
+    // El vendedor (no admin/gerente) solo puede subir su propia cotización
+    // externa de respaldo — se marca siempre, aunque no vea la casilla.
+    const effectiveBackup = canManageCatalog ? isBackupQuote : true;
     try {
       const safeName = docFile.name.toLowerCase().replace(/[^a-z0-9._-]/g, "-");
-      const path = `${docType}/${current.id}/${Date.now()}-${safeName}`;
+      const path = `${effectiveBackup ? "cotizacion_externa" : "documentos"}/${current.id}/${Date.now()}-${safeName}`;
       const { error: ue } = await supabase.storage.from("project-documents").upload(path, docFile, { contentType: docFile.type || "application/octet-stream" });
       if (ue) throw ue;
       const { error: ie } = await supabase.from("project_documents").insert({
         project_id: current.id,
-        document_type: docType,
+        document_type: docTypeText.trim(),
+        is_backup_quote: effectiveBackup,
         file_url: path,
         description: docDescription.trim() || null,
         uploaded_by: profile.id,
       });
       if (ie) throw ie;
       setDocFile(null);
+      setDocTypeText("");
+      setIsBackupQuote(false);
       setDocDescription("");
       await loadDetail(current);
     } catch (e: any) {
@@ -833,6 +847,20 @@ export function Proyectos() {
 
   async function viewDocument(doc: any) {
     const { data, error: e } = await supabase.storage.from("project-documents").createSignedUrl(doc.file_url, 300);
+    if (e) { setError(e.message); return; }
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  }
+
+  async function viewPurchaseReceipt(p: any) {
+    if (!p.receipt_url) return;
+    const { data, error: e } = await supabase.storage.from("project-documents").createSignedUrl(p.receipt_url, 300);
+    if (e) { setError(e.message); return; }
+    if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+  }
+
+  async function viewExpenseReceipt(ex: any) {
+    if (!ex.receipt_url) return;
+    const { data, error: e } = await supabase.storage.from("project-documents").createSignedUrl(ex.receipt_url, 300);
     if (e) { setError(e.message); return; }
     if (data?.signedUrl) window.open(data.signedUrl, "_blank");
   }
@@ -947,7 +975,6 @@ export function Proyectos() {
     setLoading(false);
   }
 
-  const availableDocTypes = canManageCatalog ? (["cotizacion_externa", "factura_compra", "factura_venta", "otro"] as const) : (["cotizacion_externa"] as const);
 
   const newItemsSubtotal = newItems.reduce((s, i) => s + Number(i.requested_quantity) * Number(i.proposed_unit_price), 0);
   const itemsSubtotal = items.reduce((s, i) => s + Number(i.requested_quantity) * Number(i.proposed_unit_price), 0);
@@ -1031,25 +1058,7 @@ export function Proyectos() {
           <h3 className="font-semibold text-[#0F2647]">Ítems solicitados por el cliente</h3>
           <p className="text-xs text-[#5B6670]">Si todavía no tienes el costo del proveedor, agrega el ítem igual (con costo 0) — puedes editarlo aquí antes de guardar, o más adelante desde el detalle del proyecto, antes de generar la cotización.</p>
           <div className="border rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
-            <div>
-              <div className="text-xs text-[#5B6670] mb-1">¿El producto ya existe en tu catálogo? Búscalo y selecciónalo (opcional):</div>
-              <ProductPickerBox products={products} onSelect={(p: any) => setItemDraft(d => ({
-                ...d,
-                product_id: p.product_id,
-                brand: p.brand || "",
-                client_description: d.client_description || p.name,
-                unit: p.unit || d.unit,
-                estimated_unit_cost: (!d.estimated_unit_cost || d.estimated_unit_cost === "0") ? String(p.purchase_price || 0) : d.estimated_unit_cost,
-              }))} />
-              {itemDraft.product_id && <div className="mt-1 text-xs text-green-700 flex items-center gap-2 flex-wrap">
-                Vinculado a producto del catálogo{itemDraft.brand ? ` · ${itemDraft.brand}` : ""}
-                <button type="button" onClick={() => setItemDraft({ ...itemDraft, product_id: "", brand: "" })} className="text-red-600 underline">Quitar vínculo</button>
-              </div>}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Código del cliente" value={itemDraft.client_item_code} onChange={v => setItemDraft({ ...itemDraft, client_item_code: v })} />
-              <Field label="Unidad" value={itemDraft.unit} onChange={v => setItemDraft({ ...itemDraft, unit: v })} />
-            </div>
+            <label className="block text-xs text-[#5B6670]">Unidad<input value={itemDraft.unit} onChange={e => setItemDraft({ ...itemDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción del ítem (tal como lo pide el cliente)<textarea rows={2} value={itemDraft.client_description} onChange={e => setItemDraft({ ...itemDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemDraft.requested_quantity} onChange={v => setItemDraft({ ...itemDraft, requested_quantity: v })} />
@@ -1065,7 +1074,7 @@ export function Proyectos() {
 
           <div className="max-h-64 overflow-auto divide-y">
             {newItems.map((i, idx) => <div key={idx} className="py-2 flex justify-between gap-2 text-sm">
-              <div><b>{i.client_item_code || "s/c"}</b> · {i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}{i.product_id ? <span className="text-green-700"> · vinculado a catálogo{i.brand ? ` (${i.brand})` : ""}</span> : <span className="text-amber-700"> · sin vincular</span>}</div></div>
+              <div>{i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}</div></div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={() => editDraftItem(idx)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
                 <button onClick={() => { setNewItems(newItems.filter((_, x) => x !== idx)); if (editingDraftIndex === idx) cancelDraftEdit(); }}><Trash2 size={15} className="text-red-600" /></button>
@@ -1123,47 +1132,22 @@ export function Proyectos() {
         {detailTab === "items" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código cliente</th><th>Descripción</th><th className="text-right">Cant.</th><th className="text-right">Costo est.</th><th className="text-right">Markup</th><th className="text-right">Precio propuesto</th><th>Producto vinculado</th><th></th></tr></thead>
+              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Descripción</th><th className="text-right">Cant.</th><th className="text-right">Costo est.</th><th className="text-right">Markup</th><th className="text-right">Precio propuesto</th><th></th></tr></thead>
               <tbody>
-                {items.map(i => {
-                  const linkedProduct = products.find(p => p.product_id === i.product_id);
-                  return <tr key={i.id} className="border-b align-top">
-                    <td className="py-2 font-mono text-xs">
-                      {i.client_item_code || "—"}
-                      {!i.client_item_code && linkedProduct?.sku && (
-                        <button
-                          onClick={() => syncItemCodeFromProduct(i.id, linkedProduct.sku)}
-                          className="flex items-center gap-1 text-[10px] text-[#1B3A6B] mt-1 font-sans"
-                          title={`Copiar código del producto vinculado (${linkedProduct.sku})`}
-                        >
-                          <RefreshCw size={11} /> Usar {linkedProduct.sku}
-                        </button>
-                      )}
-                    </td>
-                    <td className="min-w-48">{i.client_description}</td>
+                {items.map(i => (
+                  <tr key={i.id} className="border-b align-top">
+                    <td className="py-2 min-w-48">{i.client_description}</td>
                     <td className="text-right">{qty(i.requested_quantity)} {i.unit}</td>
                     <td className="text-right">Bs {money(i.estimated_unit_cost)}</td>
                     <td className="text-right">{i.markup_percent ?? 0}%</td>
                     <td className="text-right font-medium">Bs {money(i.proposed_unit_price)}</td>
-                    <td>
-                      <select value={i.product_id || ""} onChange={e => linkItemProduct(i.id, e.target.value)} className="border rounded-lg p-1.5 text-xs w-44">
-                        <option value="">Sin vincular</option>
-                        {products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} · {p.name}</option>)}
-                      </select>
-                      {!i.product_id && canManageCatalog && <button onClick={() => {
-                        setNewProductOpen(i.id);
-                        const codeTaken = i.client_item_code && products.some((p: any) => (p.sku || "").trim().toLowerCase() === i.client_item_code.trim().toLowerCase());
-                        setNewProductDraft({ sku: codeTaken ? "" : (i.client_item_code || ""), name: i.client_description.slice(0, 80), brand: "", unit: i.unit || "unidad", purchase_price: String(i.estimated_unit_cost || ""), sale_price: String(i.proposed_unit_price || "") });
-                      }} className="block text-xs text-[#1B3A6B] mt-1">+ Crear producto nuevo</button>}
-                      {linkedProduct?.is_project_product && <div className="mt-1 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5 inline-block">Pendiente de compra — aún no visible en catálogo general</div>}
-                    </td>
                     <td><div className="flex gap-2">
                       <button onClick={() => editExistingItem(i)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
                       <button onClick={() => removeItem(i.id)}><Trash2 size={15} className="text-red-600" /></button>
                     </div></td>
-                  </tr>;
-                })}
-                {items.length === 0 && <tr><td colSpan={8} className="py-8 text-center italic text-[#5B6670]">Sin ítems registrados.</td></tr>}
+                  </tr>
+                ))}
+                {items.length === 0 && <tr><td colSpan={6} className="py-8 text-center italic text-[#5B6670]">Sin ítems registrados.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1171,26 +1155,8 @@ export function Proyectos() {
 
           <div className="border rounded-xl p-3 bg-[#FAFBFC] space-y-2">
             <div className="text-sm font-semibold text-[#0F2647]">{editingItemId ? "Editar ítem" : "Agregar ítem"}</div>
-            <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente.</p>
-            <div>
-              <div className="text-xs text-[#5B6670] mb-1">¿El producto ya existe en tu catálogo? Búscalo y selecciónalo (opcional):</div>
-              <ProductPickerBox products={products} onSelect={(p: any) => setItemEditDraft(d => ({
-                ...d,
-                product_id: p.product_id,
-                brand: p.brand || "",
-                client_description: d.client_description || p.name,
-                unit: p.unit || d.unit,
-                estimated_unit_cost: (!d.estimated_unit_cost || d.estimated_unit_cost === "0") ? String(p.purchase_price || 0) : d.estimated_unit_cost,
-              }))} />
-              {itemEditDraft.product_id && <div className="mt-1 text-xs text-green-700 flex items-center gap-2 flex-wrap">
-                Vinculado a producto del catálogo{itemEditDraft.brand ? ` · ${itemEditDraft.brand}` : ""}
-                <button type="button" onClick={() => setItemEditDraft({ ...itemEditDraft, product_id: "", brand: "" })} className="text-red-600 underline">Quitar vínculo</button>
-              </div>}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <Field label="Código del cliente" value={itemEditDraft.client_item_code} onChange={v => setItemEditDraft({ ...itemEditDraft, client_item_code: v })} />
-              <Field label="Unidad" value={itemEditDraft.unit} onChange={v => setItemEditDraft({ ...itemEditDraft, unit: v })} />
-            </div>
+            <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente. No hace falta vincular ni crear ningún producto del catálogo todavía — eso se hace recién cuando ganes el proyecto y registres la compra real, en la pestaña Compras.</p>
+            <label className="block text-xs text-[#5B6670]">Unidad<input value={itemEditDraft.unit} onChange={e => setItemEditDraft({ ...itemEditDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción<textarea rows={2} value={itemEditDraft.client_description} onChange={e => setItemEditDraft({ ...itemEditDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <div className="grid grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemEditDraft.requested_quantity} onChange={v => setItemEditDraft({ ...itemEditDraft, requested_quantity: v })} />
@@ -1202,25 +1168,11 @@ export function Proyectos() {
               {editingItemId && <button onClick={cancelItemEdit} className="px-4 py-2 rounded-xl border text-sm">Cancelar</button>}
             </div>
           </div>
-
-          {newProductOpen && <Modal title="Crear producto para este ítem" onClose={() => setNewProductOpen(null)}>
-            <div className="space-y-3">
-              <Field label="Código SACIPETROL" value={newProductDraft.sku} onChange={v => setNewProductDraft({ ...newProductDraft, sku: v })} />
-              <Field label="Nombre / Descripción" value={newProductDraft.name} onChange={v => setNewProductDraft({ ...newProductDraft, name: v })} />
-              <Field label="Marca" value={newProductDraft.brand} onChange={v => setNewProductDraft({ ...newProductDraft, brand: v })} />
-              <div className="grid grid-cols-3 gap-2">
-                <Field label="Unidad" value={newProductDraft.unit} onChange={v => setNewProductDraft({ ...newProductDraft, unit: v })} />
-                <Field label="Precio compra" type="number" value={newProductDraft.purchase_price} onChange={v => setNewProductDraft({ ...newProductDraft, purchase_price: v })} />
-                <Field label="Precio venta" type="number" value={newProductDraft.sale_price} onChange={v => setNewProductDraft({ ...newProductDraft, sale_price: v })} />
-              </div>
-              <button onClick={() => createProductForItem(items.find(i => i.id === newProductOpen))} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear y vincular</button>
-            </div>
-          </Modal>}
         </div>}
 
         {detailTab === "cotizacion" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
           {!current.quotation_id && <div className="space-y-3">
-            <p className="text-sm text-[#5B6670]">Genera la cotización SACIPETROL a partir de los ítems y precios propuestos. Todos los ítems deben estar vinculados a un producto del catálogo.</p>
+            <p className="text-sm text-[#5B6670]">Genera la cotización SACIPETROL a partir de los ítems y precios propuestos. Todavía es una proforma — no hace falta vincular ni crear productos del catálogo para generarla.</p>
             <button disabled={saving} onClick={generateQuotation} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Generando..." : "Generar cotización SACIPETROL"}</button>
           </div>}
           {current.quotation_id && <div className="space-y-3">
@@ -1234,7 +1186,7 @@ export function Proyectos() {
                 <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio unit.</th><th className="text-right">Subtotal</th></tr></thead>
                 <tbody>
                   {quotationPreview.items.map(it => <tr key={it.id} className="border-b">
-                    <td className="py-2 font-mono text-xs">{it.sku}</td>
+                    <td className="py-2 font-mono text-xs">{it.sku || "sin vincular"}</td>
                     <td>{it.description}</td>
                     <td>{it.brand || "—"}</td>
                     <td className="text-right">{qty(it.quantity)}</td>
@@ -1276,6 +1228,7 @@ export function Proyectos() {
                 <div><b>{p.supplier}</b> · {formatDate(p.purchase_date)} {p.has_invoice ? <span className="text-green-700">· Con factura {p.invoice_number ? `(${p.invoice_number})` : ""}</span> : <span className="text-amber-700">· Sin factura</span>}</div>
                 <div className="flex items-center gap-3 shrink-0">
                   {p.invoice_amount != null && <div className="font-semibold">Bs {money(p.invoice_amount)}</div>}
+                  {p.receipt_url && <button title="Ver recibo/factura" onClick={() => viewPurchaseReceipt(p)} className="text-[#1B3A6B]"><Paperclip size={15} /></button>}
                   {isAdmin && <button title="Editar compra" onClick={() => openEditPurchase(p)} className="text-[#1B3A6B]"><Pencil size={15} /></button>}
                   {isAdmin && <button title="Eliminar compra" onClick={() => deletePurchase(p)} className="text-red-600"><Trash2 size={15} /></button>}
                 </div>
@@ -1303,20 +1256,41 @@ export function Proyectos() {
                 <div className="block text-xs text-[#5B6670]">Monto factura<div className="w-full border rounded-xl p-2.5 mt-1 text-sm bg-[#FAFBFC] text-[#0F2647] font-medium">Bs {money(purchaseItems.filter(r => r.product_id && Number(r.quantity) > 0).reduce((s, r) => s + Number(r.quantity) * (Number(r.unit_cost) || 0), 0))}</div><div className="text-[10px] text-[#5B6670] mt-0.5">Se calcula automáticamente: suma de cantidad × costo unitario de los productos comprados.</div></div>
               </div>}
               <Field label="Notas" value={purchaseDraft.notes} onChange={v => setPurchaseDraft({ ...purchaseDraft, notes: v })} />
+              <label className="block text-xs text-[#5B6670]">Adjuntar recibo o factura de la compra (opcional)<input type="file" onChange={e => setPurchaseReceiptFile(e.target.files?.[0] || null)} className="w-full border rounded-xl p-2 mt-1 text-sm" /></label>
 
               <div className="border-t pt-3">
                 <div className="text-sm font-semibold text-[#0F2647] mb-2">Productos comprados</div>
-                {purchaseItems.map((row, idx) => <div key={idx} className="grid grid-cols-[1fr_1fr_80px_100px_auto] gap-2 mb-2 items-end">
-                  <label className="text-[11px] text-[#5B6670]">Ítem del proyecto (opcional)<select value={row.project_item_id} onChange={e => updatePurchaseItemRow(idx, { project_item_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">—</option>{items.map(i => <option key={i.id} value={i.id}>{i.client_item_code || i.client_description.slice(0, 20)}</option>)}</select></label>
-                  <label className="text-[11px] text-[#5B6670]">Producto<select value={row.product_id} onChange={e => updatePurchaseItemRow(idx, { product_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">Seleccionar...</option>{products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku}</option>)}</select></label>
-                  <label className="text-[11px] text-[#5B6670]">Cant.<input type="number" min="0.01" step="0.01" value={row.quantity} onChange={e => updatePurchaseItemRow(idx, { quantity: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1" /></label>
+                <p className="text-xs text-[#5B6670] mb-2">Aquí es donde se da de alta el producto con su código SACIPETROL, si todavía no existe en el catálogo. Las cantidades son enteras (sin decimales).</p>
+                {purchaseItems.map((row, idx) => <div key={idx} className="grid grid-cols-[1fr_1fr_70px_90px_auto] gap-2 mb-1 items-end">
+                  <label className="text-[11px] text-[#5B6670]">Ítem del proyecto (opcional)<select value={row.project_item_id} onChange={e => updatePurchaseItemRow(idx, { project_item_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">—</option>{items.map(i => <option key={i.id} value={i.id}>{i.client_description.slice(0, 24)}</option>)}</select></label>
+                  <label className="text-[11px] text-[#5B6670]">Producto<select value={row.product_id} onChange={e => updatePurchaseItemRow(idx, { product_id: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1"><option value="">Seleccionar...</option>{products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} · {p.name}</option>)}</select></label>
+                  <label className="text-[11px] text-[#5B6670]">Cant.<input type="number" min="1" step="1" value={row.quantity} onChange={e => updatePurchaseItemRow(idx, { quantity: Math.max(1, Math.round(Number(e.target.value) || 0)) })} className="w-full border rounded-lg p-2 text-xs mt-1" /></label>
                   <label className="text-[11px] text-[#5B6670]">Costo unit.<input type="number" min="0" step="0.01" value={row.unit_cost} onChange={e => updatePurchaseItemRow(idx, { unit_cost: e.target.value })} className="w-full border rounded-lg p-2 text-xs mt-1" /></label>
                   <button onClick={() => removePurchaseItemRow(idx)}><Trash2 size={15} className="text-red-600" /></button>
+                  {!row.product_id && canManageCatalog && <button onClick={() => {
+                    setNewProductOpen(idx);
+                    const linkedItem = items.find(i => i.id === row.project_item_id);
+                    setNewProductDraft({ sku: "", name: linkedItem ? linkedItem.client_description.slice(0, 80) : "", brand: "", unit: linkedItem?.unit || "unidad", purchase_price: row.unit_cost || "", sale_price: "" });
+                  }} className="col-span-4 text-left text-xs text-[#1B3A6B]">+ Crear producto nuevo (código SACIPETROL)</button>}
                 </div>)}
-                <button onClick={addPurchaseItemRow} className="text-xs text-[#1B3A6B]"><Plus size={13} className="inline mr-1" />Agregar producto</button>
+                <button onClick={addPurchaseItemRow} className="text-xs text-[#1B3A6B] mt-2"><Plus size={13} className="inline mr-1" />Agregar producto</button>
               </div>
 
               <button disabled={saving} onClick={savePurchase} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : editingPurchaseId ? "Guardar cambios" : "Registrar compra"}</button>
+            </div>
+          </Modal>}
+
+          {newProductOpen !== null && <Modal title="Crear producto (código SACIPETROL)" onClose={() => setNewProductOpen(null)}>
+            <div className="space-y-3">
+              <Field label="Código SACIPETROL" value={newProductDraft.sku} onChange={v => setNewProductDraft({ ...newProductDraft, sku: v })} />
+              <Field label="Nombre / Descripción" value={newProductDraft.name} onChange={v => setNewProductDraft({ ...newProductDraft, name: v })} />
+              <Field label="Marca" value={newProductDraft.brand} onChange={v => setNewProductDraft({ ...newProductDraft, brand: v })} />
+              <div className="grid grid-cols-3 gap-2">
+                <Field label="Unidad" value={newProductDraft.unit} onChange={v => setNewProductDraft({ ...newProductDraft, unit: v })} />
+                <Field label="Precio compra" type="number" value={newProductDraft.purchase_price} onChange={v => setNewProductDraft({ ...newProductDraft, purchase_price: v })} />
+                <Field label="Precio venta" type="number" value={newProductDraft.sale_price} onChange={v => setNewProductDraft({ ...newProductDraft, sale_price: v })} />
+              </div>
+              <button onClick={() => createProductForPurchaseRow(newProductOpen)} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm">Crear y usar en esta compra</button>
             </div>
           </Modal>}
         </div>}
@@ -1328,10 +1302,10 @@ export function Proyectos() {
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Tipo</th><th>Descripción</th><th>Factura</th><th className="text-right">Monto</th></tr></thead>
+              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Tipo</th><th>Descripción</th><th>Factura</th><th className="text-right">Monto</th><th></th></tr></thead>
               <tbody>
-                {expenses.map(ex => <tr key={ex.id} className="border-b"><td className="py-2">{EXPENSE_LABELS[ex.expense_type]}</td><td>{ex.description}</td><td>{ex.has_invoice ? (ex.invoice_number || "Con factura") : "Sin factura"}</td><td className="text-right">Bs {money(ex.amount)}</td></tr>)}
-                {expenses.length === 0 && <tr><td colSpan={4} className="py-8 text-center italic text-[#5B6670]">Sin gastos registrados.</td></tr>}
+                {expenses.map(ex => <tr key={ex.id} className="border-b"><td className="py-2">{EXPENSE_LABELS[ex.expense_type]}</td><td>{ex.description}</td><td>{ex.has_invoice ? (ex.invoice_number || "Con factura") : "Sin factura"}</td><td className="text-right">Bs {money(ex.amount)}</td><td>{ex.receipt_url && <button title="Ver recibo" onClick={() => viewExpenseReceipt(ex)} className="text-[#1B3A6B]"><Paperclip size={15} /></button>}</td></tr>)}
+                {expenses.length === 0 && <tr><td colSpan={5} className="py-8 text-center italic text-[#5B6670]">Sin gastos registrados.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1343,6 +1317,7 @@ export function Proyectos() {
               <Field label="Monto" type="number" value={expenseDraft.amount} onChange={v => setExpenseDraft({ ...expenseDraft, amount: v })} />
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={expenseDraft.has_invoice} onChange={e => setExpenseDraft({ ...expenseDraft, has_invoice: e.target.checked })} /> Con factura</label>
               {expenseDraft.has_invoice && <Field label="N° de factura" value={expenseDraft.invoice_number} onChange={v => setExpenseDraft({ ...expenseDraft, invoice_number: v })} />}
+              <label className="block text-xs text-[#5B6670]">Adjuntar recibo (opcional)<input type="file" onChange={e => setExpenseReceiptFile(e.target.files?.[0] || null)} className="w-full border rounded-xl p-2 mt-1 text-sm" /></label>
               <button disabled={saving} onClick={saveExpense} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar gasto"}</button>
             </div>
           </Modal>}
@@ -1351,14 +1326,17 @@ export function Proyectos() {
         {detailTab === "documentos" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
           <div className="border rounded-xl p-3 bg-[#FAFBFC] space-y-2">
             <div className="text-sm font-semibold text-[#0F2647]">Adjuntar documento</div>
-            <label className="block text-xs text-[#5B6670]">Tipo de documento<select value={docType} onChange={e => setDocType(e.target.value as any)} className="w-full border rounded-xl p-2.5 mt-1 text-sm">{availableDocTypes.map(t => <option key={t} value={t}>{DOC_LABELS[t]}</option>)}</select></label>
+            <Field label="Tipo de documento (a tu criterio, ej.: Guía de remisión, Orden de compra firmada...)" value={docTypeText} onChange={setDocTypeText} />
+            {canManageCatalog
+              ? <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={isBackupQuote} onChange={e => setIsBackupQuote(e.target.checked)} /> Es la cotización externa de respaldo del vendedor</label>
+              : <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">Como vendedor solo puedes subir aquí tu cotización externa de respaldo. El tipo que escribas arriba es solo para identificarla — el resto de documentos (facturas, etc.) los sube admin/gerente.</div>}
             <label className="block text-xs text-[#5B6670]">Archivo<input type="file" onChange={e => setDocFile(e.target.files?.[0] || null)} className="w-full border rounded-xl p-2 mt-1 text-sm" /></label>
             <Field label="Descripción (opcional)" value={docDescription} onChange={setDocDescription} />
             <button disabled={saving} onClick={uploadDocument} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50"><Upload size={14} className="inline mr-1" />{saving ? "Subiendo..." : "Subir documento"}</button>
           </div>
           <div className="divide-y">
             {documents.map(d => <div key={d.id} className="py-2.5 flex justify-between items-center text-sm">
-              <div><b>{DOC_LABELS[d.document_type]}</b>{d.description && <span className="text-[#5B6670]"> · {d.description}</span>}<div className="text-xs text-[#5B6670]">{new Date(d.uploaded_at).toLocaleString("es-BO")}</div></div>
+              <div><b>{d.document_type}</b>{d.is_backup_quote && <span className="ml-1 text-[10px] text-[#1B3A6B] bg-blue-50 border border-blue-100 rounded px-1.5 py-0.5">respaldo del vendedor</span>}{d.description && <span className="text-[#5B6670]"> · {d.description}</span>}<div className="text-xs text-[#5B6670]">{new Date(d.uploaded_at).toLocaleString("es-BO")}</div></div>
               <button onClick={() => viewDocument(d)} className="text-[#1B3A6B] font-semibold text-xs"><Eye size={14} className="inline mr-1" />Ver</button>
             </div>)}
             {documents.length === 0 && <div className="text-sm italic text-[#5B6670] text-center py-6">Sin documentos adjuntos.</div>}

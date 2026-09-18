@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Search, Plus, Phone, ClipboardList, X } from "lucide-react";
+import { Search, Plus, Phone, ClipboardList, X, Mail } from "lucide-react";
 
 const TIPOS = ["Ferretería", "Tienda eléctrica", "Distribuidor", "Constructor", "Contratista", "Electricista", "Industria", "Institución", "Otro"];
 
@@ -22,17 +22,17 @@ export function Clientes() {
   const [showCrear, setShowCrear] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [errorCrear, setErrorCrear] = useState("");
-  const [form, setForm] = useState({ nombre: "", tipos: [] as string[], zona: "", ciudad: "", direccion: "", telefono: "" });
+  const [form, setForm] = useState({ nombre: "", tipos: [] as string[], zona: "", ciudad: "", direccion: "", telefono: "", email: "" });
 
   useEffect(() => { cargar(); }, []);
 
   async function cargar() {
-    const { data } = await supabase.from("customers").select("id,name,zone,city,business_types,address,phone,created_at").order("name");
+    const { data } = await supabase.from("customers").select("id,name,zone,city,business_types,address,phone,email,created_at").order("name");
     setClientes(data ?? []);
   }
 
   function abrirCrear() {
-    setForm({ nombre: "", tipos: [], zona: "", ciudad: "", direccion: "", telefono: "" });
+    setForm({ nombre: "", tipos: [], zona: "", ciudad: "", direccion: "", telefono: "", email: "" });
     setErrorCrear("");
     setShowCrear(true);
   }
@@ -56,6 +56,7 @@ export function Clientes() {
         city: form.ciudad.trim() || null,
         address: form.direccion.trim() || null,
         phone: form.telefono.trim() || null,
+        email: form.email.trim() || null,
         created_by: profile?.id ?? null,
       }).select().single();
       if (error) throw error;
@@ -101,7 +102,7 @@ export function Clientes() {
       {/* Tabla en escritorio */}
       <div className="hidden md:block bg-white rounded-2xl p-5 overflow-x-auto">
         <table className="w-full text-sm">
-          <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Negocio / Razón social</th><th>Zona</th><th>Ciudad</th><th>Tipo</th><th>Dirección</th><th>Teléfono</th><th>Registro</th></tr></thead>
+          <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Negocio / Razón social</th><th>Zona</th><th>Ciudad</th><th>Tipo</th><th>Dirección</th><th>Teléfono</th><th>Correo</th><th>Registro</th></tr></thead>
           <tbody>
             {visibles.map(c => <tr key={c.id} onClick={() => navigate(`/clientes/${c.id}`)} className="border-b cursor-pointer hover:bg-[#F5F6F8]">
               <td className="py-2.5 font-medium">{c.name}</td>
@@ -110,9 +111,10 @@ export function Clientes() {
               <td>{(c.business_types ?? []).join(", ") || "—"}</td>
               <td>{c.address || "—"}</td>
               <td>{c.phone ? <span><Phone size={13} className="inline mr-1" />{c.phone}</span> : "—"}</td>
+              <td>{c.email ? <span><Mail size={13} className="inline mr-1" />{c.email}</span> : "—"}</td>
               <td>{c.created_at ? new Date(c.created_at).toLocaleDateString("es-BO") : "—"}</td>
             </tr>)}
-            {!visibles.length && <tr><td colSpan={7} className="py-8 text-center italic text-[#5B6670]">Sin resultados.</td></tr>}
+            {!visibles.length && <tr><td colSpan={8} className="py-8 text-center italic text-[#5B6670]">Sin resultados.</td></tr>}
           </tbody>
         </table>
       </div>
@@ -125,6 +127,7 @@ export function Clientes() {
           {(c.business_types ?? []).length > 0 && <div className="text-xs text-[#5B6670] mt-1">{(c.business_types ?? []).join(", ")}</div>}
           {c.address && <div className="text-xs text-[#5B6670] mt-1">{c.address}</div>}
           {c.phone && <div className="text-xs text-[#1B3A6B] mt-1"><Phone size={13} className="inline mr-1" />{c.phone}</div>}
+          {c.email && <div className="text-xs text-[#1B3A6B] mt-1"><Mail size={13} className="inline mr-1" />{c.email}</div>}
         </div>)}
         {!visibles.length && <div className="bg-white rounded-2xl p-8 text-center italic text-[#5B6670] text-sm">Sin resultados.</div>}
       </div>
@@ -162,9 +165,14 @@ export function Clientes() {
           <input value={form.direccion} onChange={e => patch({ direccion: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" />
         </label>
 
-        <label className="block text-xs text-[#5B6670] mb-4">Teléfono
-          <input value={form.telefono} onChange={e => patch({ telefono: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" />
-        </label>
+        <div className="grid grid-cols-2 gap-3 mb-4">
+          <label className="text-xs text-[#5B6670]">Teléfono
+            <input value={form.telefono} onChange={e => patch({ telefono: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" />
+          </label>
+          <label className="text-xs text-[#5B6670]">Correo electrónico
+            <input type="email" value={form.email} onChange={e => patch({ email: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" placeholder="cliente@empresa.com" />
+          </label>
+        </div>
 
         <div className="flex gap-2">
           <button onClick={() => setShowCrear(false)} className="flex-1 py-2.5 rounded-xl border text-sm">Cancelar</button>

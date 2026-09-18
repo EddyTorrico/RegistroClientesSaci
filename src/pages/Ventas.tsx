@@ -41,6 +41,8 @@ export function Ventas() {
   const [quotationId, setQuotationId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Contado");
   const [deliveryTime, setDeliveryTime] = useState("Inmediata");
+  const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
+  const [subject, setSubject] = useState("");
   const [discount, setDiscount] = useState("0");
   const [amountPaid, setAmountPaid] = useState("0");
   const [dueDate, setDueDate] = useState("");
@@ -99,7 +101,7 @@ export function Ventas() {
       supabase.from("customers").select("id,name,address,city,zone,phone").order("name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,image_url").eq("active", true).eq("is_project_product", false).order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
-      supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false}),
+      supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false}),
       supabase.from("quotations").select("id,quotation_number,customer_id,user_id,quotation_date,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total").order("created_at", {ascending:false}),
       supabase.from("sale_items").select("sale_id,product_id,quantity,purchase_cost,subtotal"),
     ]);
@@ -109,13 +111,13 @@ export function Ventas() {
   }
 
   async function reloadSales() {
-    const {data,error:e} = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false});
+    const {data,error:e} = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false});
     if (e) setError(e.message); else setSales(data ?? []);
   }
 
   function resetSale() {
     setSaved(null); setItems([]); setCustomerId(""); setSellerId(profile?.id ?? ""); setQuotationId("");
-    setPaymentMethod("Contado"); setDeliveryTime("Inmediata"); setDiscount("0"); setAmountPaid("0"); setDueDate(""); setDueDateOverride(false);
+    setPaymentMethod("Contado"); setDeliveryTime("Inmediata"); setPurchaseOrderNumber(""); setSubject(""); setDiscount("0"); setAmountPaid("0"); setDueDate(""); setDueDateOverride(false);
     setObservations(""); setProductSearch(""); setError(""); setScreen("new");
     if (params.get("quotation")) setParams({});
   }
@@ -142,11 +144,14 @@ export function Ventas() {
           unit: i.unit || p?.unit || "unidad",
           stock: Number(p?.stock || 0),
           purchase_cost: Number(p?.purchase_price || 0),
+          client_item_code: i.client_item_code || "",
+          delivery_date: i.delivery_date || "",
           needs_link: !i.product_id,
         };
       });
       setQuotationId(id); setCustomerId(q.customer_id); setSellerId(q.user_id || profile?.id || "");
       setPaymentMethod(q.payment_terms === "Crédito" ? "Crédito" : "Contado"); setDeliveryTime(q.delivery_time || "Inmediata");
+      setPurchaseOrderNumber(""); setSubject("");
       setDiscount(String(q.discount || 0)); setObservations(q.observations || ""); setItems(normalized); setScreen("new");
     } catch(e:any) { setError(e.message || "No fue posible convertir la cotización."); setScreen("list"); }
     finally { setLoading(false); }
@@ -156,7 +161,7 @@ export function Ventas() {
     setError("");
     if (Number(p.stock) <= 0) return setError("El producto no tiene stock disponible.");
     if (items.some(x => x.product_id === p.product_id)) return;
-    setItems([...items, { product_id:p.product_id, sku:p.sku, description:p.name, brand:p.brand || "", unit:p.unit || "unidad", quantity:1, unit_price:Number(p.sale_price || 0), purchase_cost:Number(p.purchase_price || 0), discount:0, stock:Number(p.stock || 0) }]);
+    setItems([...items, { product_id:p.product_id, sku:p.sku, description:p.name, brand:p.brand || "", unit:p.unit || "unidad", quantity:1, unit_price:Number(p.sale_price || 0), purchase_cost:Number(p.purchase_price || 0), discount:0, stock:Number(p.stock || 0), client_item_code:"", delivery_date:"" }]);
   }
 
   // Vincula (o corrige) el producto real de catálogo de un renglón que vino
@@ -214,6 +219,7 @@ export function Ventas() {
       const {data:s,error:se} = await supabase.from("sales").insert({
         customer_id:customerId, user_id:sellerId, quotation_id:quotationId || null,
         customer_address:selectedCustomer?.address?.trim() || null, payment_method:paymentMethod, delivery_time:deliveryTime || null,
+        purchase_order_number: purchaseOrderNumber.trim() || null, subject: subject.trim() || null,
         subtotal, discount:Number(discount||0), total, amount_paid:paid, balance, due_date:paymentMethod==="Crédito" && balance>0 ? dueDate : null,
         due_date_override: paymentMethod==="Crédito" && balance>0 ? dueDateOverride : false,
         observations:observations.trim() || null, status:"borrador",
@@ -223,6 +229,7 @@ export function Ventas() {
         sale_id:s.id, product_id:i.product_id, sku:i.sku, description:i.description, brand:i.brand||null, unit:i.unit||"unidad",
         quantity:Number(i.quantity), unit_price:Number(i.unit_price), purchase_cost:Number(i.purchase_cost||0), discount:Number(i.discount||0),
         subtotal:Math.max(0, Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0)),
+        client_item_code: i.client_item_code?.trim() || null, delivery_date: i.delivery_date || null,
       })));
       if (ie) throw ie;
       const {data:confirmed,error:ce} = await supabase.from("sales").update({status:"confirmada"}).eq("id",s.id).select().single();
@@ -238,6 +245,7 @@ export function Ventas() {
     try {
       const {data,error:e} = await supabase.from("sale_items").select("*").eq("sale_id",s.id).order("id"); if(e) throw e;
       setSaved(s); setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "—");
+      setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount||0)); setAmountPaid(String(s.amount_paid||0)); setDueDate(s.due_date||""); setObservations(s.observations||""); setItems((data??[]).map((i:any)=>({...i,stock:0})));
       setEditingDueDate(false); setShowDeliveryForm(false);
       await loadDeliveryData(s.id);
@@ -307,7 +315,7 @@ export function Ventas() {
       );
       if (ie) throw ie;
       setShowDeliveryForm(false);
-      const { data: refreshedSale } = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").eq("id", saved.id).single();
+      const { data: refreshedSale } = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").eq("id", saved.id).single();
       if (refreshedSale) setSaved(refreshedSale);
       await loadDeliveryData(saved.id);
       await reloadSales();
@@ -325,7 +333,7 @@ export function Ventas() {
     if (e) { setError(e.message); return; }
     const withInfo = (data ?? []).map((di: any) => {
       const st = deliveryStatus.find(s => s.sale_item_id === di.sale_item_id) || items.find(i => i.id === di.sale_item_id);
-      return { ...di, sku: st?.sku, description: st?.description, unit: st?.unit };
+      return { ...di, sku: st?.sku, description: st?.description, unit: st?.unit, client_item_code: st?.client_item_code };
     });
     setViewingDeliveryNote(note);
     setViewingDeliveryItems(withInfo);
@@ -420,6 +428,10 @@ export function Ventas() {
                 <label className="text-[11px]">Precio<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,unit_price:Number(e.target.value)}:x))} className="w-full border rounded-lg p-2 mt-1"/></label>
                 <div className="text-[11px]">Total<div className="p-2 mt-1 font-medium">Bs {money(Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0))}</div></div>
               </div>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <label className="text-[11px]">Código cliente (Nº ítem de su OC)<input value={i.client_item_code||""} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,client_item_code:e.target.value}:x))} placeholder="Ej. 30" className="w-full border rounded-lg p-2 mt-1"/></label>
+                <label className="text-[11px]">Fecha de entrega (opcional)<input type="date" value={i.delivery_date||""} onChange={e=>setItems(items.map((x,n)=>n===idx?{...x,delivery_date:e.target.value}:x))} className="w-full border rounded-lg p-2 mt-1"/></label>
+              </div>
               {i.product_id && <div className="mt-1">
                 <select onChange={e => e.target.value && linkItemProduct(idx, e.target.value)} defaultValue="" className="w-full border rounded-lg p-1.5 text-[11px] text-[#5B6670] bg-white">
                   <option value="">Cambiar producto vinculado...</option>
@@ -429,6 +441,7 @@ export function Ventas() {
             </>}
           </div>)}
           <div className="grid md:grid-cols-2 gap-3 mt-4"><label className="text-xs">Forma de pago<select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2 mt-1"><option>Contado</option><option>Crédito</option></select></label><label className="text-xs">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>
+          <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Orden de compra (Nº, para la nota de entrega)<input value={purchaseOrderNumber} onChange={e=>setPurchaseOrderNumber(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Objeto (para la nota de entrega)<input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Ej. ADQUISICION DE EQUIPOS ELECTRICOS" className="w-full border rounded-lg p-2 mt-1"/></label></div>
           {paymentMethod==="Crédito" && <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Pago inicial (Bs)<input type="number" min="0" max={total} step="0.01" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>}
           <label className="block text-xs mt-3">Descuento general (Bs)<input type="number" min="0" step="0.01" value={discount} onChange={e=>setDiscount(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
           <label className="block text-xs mt-3">Observaciones<textarea rows={3} value={observations} onChange={e=>setObservations(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
@@ -443,7 +456,7 @@ export function Ventas() {
       {screen==="view" && saved && <div className="bg-white rounded-2xl p-8 max-w-6xl mx-auto print:p-0">
         <div className="flex justify-between gap-4 border-b pb-4"><div><h2 className="text-xl font-bold">{COMPANY.name}</h2><div className="text-xs text-[#5B6670]">{COMPANY.address}<br/>{COMPANY.phones}<br/>{COMPANY.email} · {COMPANY.web}</div></div><div className="text-right"><div className="font-semibold">NOTA DE VENTA</div><div className="font-mono font-semibold">{saved.sale_number}</div><div>{formatDate(saved.sale_date)}</div></div></div>
         <div className="grid md:grid-cols-2 gap-2 py-5 text-sm"><div>Cliente: <b>{selectedCustomer?.name||"—"}</b></div><div>Vendedor: <b>{selectedSeller?.full_name||"—"}</b></div><div className="md:col-span-2">Dirección: <b>{saved.customer_address||selectedCustomer?.address||"—"}</b></div>{saved.quotation_id && <div className="md:col-span-2">Cotización origen: <b>{quotations.find(q=>q.id===saved.quotation_id)?.quotation_number||"—"}</b></div>}</div>
-        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2">#</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">P. Unit.</th><th className="text-right">Total</th></tr></thead><tbody>{items.map((i,n)=><tr key={i.id||i.product_id} className="border-b"><td className="py-2">{n+1}</td><td className="font-mono text-xs">{i.sku}</td><td>{i.description}</td><td>{i.brand||"—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit||"unidad"}</td><td className="text-right">Bs {money(i.unit_price)}</td><td className="text-right">Bs {money(i.subtotal ?? (Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0)))}</td></tr>)}</tbody></table></div>
+        <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b text-left"><th className="py-2">#</th><th>Código</th><th>Cód. cliente</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th>Entrega</th><th className="text-right">P. Unit.</th><th className="text-right">Total</th></tr></thead><tbody>{items.map((i,n)=><tr key={i.id||i.product_id} className="border-b"><td className="py-2">{n+1}</td><td className="font-mono text-xs">{i.sku}</td><td>{i.client_item_code||"—"}</td><td>{i.description}</td><td>{i.brand||"—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit||"unidad"}</td><td>{i.delivery_date?formatDate(i.delivery_date):"—"}</td><td className="text-right">Bs {money(i.unit_price)}</td><td className="text-right">Bs {money(i.subtotal ?? (Number(i.quantity)*Number(i.unit_price)-Number(i.discount||0)))}</td></tr>)}</tbody></table></div>
         <div className="mt-4 ml-auto max-w-xs text-sm space-y-1"><div className="flex justify-between"><span>Subtotal</span><b>Bs {money(saved.subtotal)}</b></div><div className="flex justify-between"><span>Descuento</span><b>Bs {money(saved.discount)}</b></div><div className="flex justify-between border-t pt-2 text-base"><span>Total</span><b>Bs {money(saved.total)}</b></div><div className="flex justify-between"><span>Pagado</span><b>Bs {money(saved.amount_paid)}</b></div><div className="flex justify-between"><span>Saldo</span><b>Bs {money(saved.balance)}</b></div></div>
         <div className="mt-6 text-xs space-y-1">
           <div><b>Forma de pago:</b> {saved.payment_method}</div>
@@ -469,8 +482,8 @@ export function Ventas() {
 
           <div className="overflow-x-auto mb-2">
             <table className="w-full text-xs">
-              <thead><tr className="text-left text-[#5B6670] border-b"><th className="py-1">Código</th><th>Descripción</th><th className="text-right">Vendido</th><th className="text-right">Entregado</th><th className="text-right">Pendiente</th></tr></thead>
-              <tbody>{deliveryStatus.map(st=><tr key={st.sale_item_id} className="border-b"><td className="py-1 font-mono">{st.sku}</td><td>{st.description}</td><td className="text-right">{qty(st.quantity_sold)}</td><td className="text-right">{qty(st.quantity_delivered)}</td><td className={`text-right ${Number(st.quantity_pending)>0?"text-amber-700 font-semibold":""}`}>{qty(st.quantity_pending)}</td></tr>)}</tbody>
+              <thead><tr className="text-left text-[#5B6670] border-b"><th className="py-1">Código</th><th>Cód. cliente</th><th>Descripción</th><th className="text-right">Vendido</th><th className="text-right">Entregado</th><th className="text-right">Pendiente</th></tr></thead>
+              <tbody>{deliveryStatus.map(st=><tr key={st.sale_item_id} className="border-b"><td className="py-1 font-mono">{st.sku}</td><td>{st.client_item_code||"—"}</td><td>{st.description}</td><td className="text-right">{qty(st.quantity_sold)}</td><td className="text-right">{qty(st.quantity_delivered)}</td><td className={`text-right ${Number(st.quantity_pending)>0?"text-amber-700 font-semibold":""}`}>{qty(st.quantity_pending)}</td></tr>)}</tbody>
             </table>
           </div>
 
@@ -502,27 +515,58 @@ export function Ventas() {
         <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={cancelSale} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700">Anular venta y devolver stock</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
       </div>}
 
-      {screen==="delivery" && viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-3xl mx-auto print:p-0">
-        <div className="flex justify-between gap-4 border-b pb-4">
-          <div><h2 className="text-xl font-bold">{COMPANY.name}</h2><div className="text-xs text-[#5B6670]">{COMPANY.address}<br/>{COMPANY.phones}</div></div>
-          <div className="text-right"><div className="font-semibold">NOTA DE ENTREGA</div><div className="font-mono font-semibold">{viewingDeliveryNote.delivery_number}</div><div>{formatDate(viewingDeliveryNote.delivery_date)}</div></div>
-        </div>
-        <div className="grid md:grid-cols-2 gap-2 py-5 text-sm">
-          <div>Cliente: <b>{selectedCustomer?.name||"—"}</b></div>
-          <div>Venta: <b>{saved?.sale_number||"—"}</b></div>
-          {viewingDeliveryNote.received_by && <div className="md:col-span-2">Recibido por: <b>{viewingDeliveryNote.received_by}</b></div>}
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead><tr className="border-b text-left"><th className="py-2">#</th><th>Código</th><th>Descripción</th><th>Unidad</th><th className="text-right">Cantidad entregada</th></tr></thead>
-            <tbody>{viewingDeliveryItems.map((i,n)=><tr key={i.id} className="border-b"><td className="py-2">{n+1}</td><td className="font-mono text-xs">{i.sku||"—"}</td><td>{i.description||"—"}</td><td>{i.unit||"unidad"}</td><td className="text-right">{qty(i.quantity)}</td></tr>)}</tbody>
-          </table>
-        </div>
-        {viewingDeliveryNote.notes && <div className="mt-4 text-xs"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
-        <div className="mt-10 grid grid-cols-2 gap-8 text-xs text-center">
-          <div className="border-t pt-2">Entregado por</div>
-          <div className="border-t pt-2">Recibido conforme</div>
-        </div>
+      {screen==="delivery" && viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
+        <table className="w-full border-collapse border border-black text-sm" style={{fontFamily:"Calibri, Arial, sans-serif"}}>
+          <tbody>
+            <tr>
+              <td colSpan={4} className="border border-black p-3 text-center align-middle">
+                <div className="text-lg font-bold">{COMPANY.name}</div>
+              </td>
+              <td colSpan={2} className="border border-black p-3 text-center align-middle">
+                <div className="font-bold">NOTA DE ENTREGA</div>
+                <div className="font-bold font-mono">{viewingDeliveryNote.delivery_number}</div>
+              </td>
+            </tr>
+            <tr>
+              <td colSpan={3} className="border border-black p-2 text-center">CLIENTE: <b>{selectedCustomer?.name||"—"}</b></td>
+              <td className="border border-black p-2 text-center">ORDEN DE COMPRA:</td>
+              <td colSpan={2} className="border border-black p-2 text-center">FECHA</td>
+            </tr>
+            <tr>
+              <td colSpan={3} className="border border-black p-2 text-center">OBJETO: <b>{saved?.subject||"—"}</b></td>
+              <td className="border border-black p-2 text-center">{saved?.purchase_order_number||"—"}</td>
+              <td colSpan={2} className="border border-black p-2 text-center">{formatDate(viewingDeliveryNote.delivery_date)}</td>
+            </tr>
+            <tr className="font-bold">
+              <td className="border border-black p-2 text-center">Nº</td>
+              <td className="border border-black p-2 text-center">ITEM</td>
+              <td className="border border-black p-2 text-center">CODIGO</td>
+              <td className="border border-black p-2 text-center">DESCRIPCIÓN</td>
+              <td className="border border-black p-2 text-center">CANTIDAD</td>
+              <td className="border border-black p-2 text-center">UM</td>
+            </tr>
+            {viewingDeliveryItems.map((i,n)=><tr key={i.id}>
+              <td className="border border-black p-2 text-center">{n+1}</td>
+              <td className="border border-black p-2 text-center">{i.client_item_code||"—"}</td>
+              <td className="border border-black p-2 text-center font-mono text-xs">{i.sku||"—"}</td>
+              <td className="border border-black p-2 text-left">{i.description||"—"}</td>
+              <td className="border border-black p-2 text-center">{qty(i.quantity)}</td>
+              <td className="border border-black p-2 text-center">{i.unit||"unidad"}</td>
+            </tr>)}
+            <tr>
+              <td colSpan={3} className="border border-black p-3 pt-10 text-center align-bottom">
+                <div>Recibido Por:</div>
+                <div className="font-semibold mt-1">{selectedCustomer?.name||""}</div>
+                {viewingDeliveryNote.received_by && <div className="text-xs mt-1">{viewingDeliveryNote.received_by}</div>}
+              </td>
+              <td colSpan={3} className="border border-black p-3 pt-10 text-center align-bottom">
+                <div>Entregado Por:</div>
+                <div className="font-semibold mt-1">{COMPANY.name}</div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        {viewingDeliveryNote.notes && <div className="mt-4 text-xs print:mt-2"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
         <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
           <button onClick={()=>setScreen("view")} className="px-5 py-2.5 rounded-xl border">Volver a la venta</button>
           <button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button>
