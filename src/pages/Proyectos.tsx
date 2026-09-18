@@ -6,8 +6,10 @@ import { supabase } from "../lib/supabase";
 import {
   Plus, Search, Eye, Trash2, Check, X, ShoppingBag, Package,
   Truck, Receipt, Upload, BarChart3, ClipboardList, ExternalLink, Pencil,
-  RefreshCw, FileText, Paperclip,
+  RefreshCw, FileText, Paperclip, Printer, PackageCheck,
 } from "lucide-react";
+
+const COMPANY = { name: "SACIPETROL S.R.L." };
 
 const moneyFmt = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const qtyFmt = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -45,7 +47,7 @@ const STATUS_BADGE: Record<string, string> = {
 };
 const EXPENSE_LABELS: Record<string, string> = { transporte: "Transporte", insumos: "Insumos", comision: "Comisión", otro: "Otro" };
 
-const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", presentation_at: "", observations: "" };
+const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", contact_email: "", presentation_at: "", observations: "" };
 const emptyItemDraft = { client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
 const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: true, invoice_number: "", invoice_amount: "", notes: "" };
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
@@ -127,7 +129,7 @@ export function Proyectos() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
   const [current, setCurrent] = useState<any>(null);
-  const [detailTab, setDetailTab] = useState<"items" | "cotizacion" | "compras" | "gastos" | "documentos" | "facturacion" | "rentabilidad">("items");
+  const [detailTab, setDetailTab] = useState<"items" | "cotizacion" | "compras" | "gastos" | "documentos" | "facturacion" | "rentabilidad" | "entrega">("items");
   const [items, setItems] = useState<any[]>([]);
   const [purchases, setPurchases] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -135,6 +137,10 @@ export function Proyectos() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [profitability, setProfitability] = useState<any>(null);
   const [linkedSale, setLinkedSale] = useState<any>(null);
+  const [saleDeliveryStatus, setSaleDeliveryStatus] = useState<any[]>([]);
+  const [projectDeliveryNotes, setProjectDeliveryNotes] = useState<any[]>([]);
+  const [viewingDeliveryNote, setViewingDeliveryNote] = useState<any>(null);
+  const [viewingDeliveryItems, setViewingDeliveryItems] = useState<any[]>([]);
   const [quotationPreview, setQuotationPreview] = useState<{ quotation_number: string; subtotal: number; discount: number; total: number; items: any[] } | null>(null);
 
   const [itemEditDraft, setItemEditDraft] = useState(emptyItemDraft);
@@ -170,7 +176,7 @@ export function Proyectos() {
   async function load() {
     setError("");
     const [p, c, s, pr, ia] = await Promise.all([
-      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false }),
+      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false }),
       supabase.from("customers").select("id,name,address").order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,is_project_product").eq("active", true).order("name"),
@@ -186,7 +192,7 @@ export function Proyectos() {
   }
 
   async function reloadProjects() {
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").order("created_at", { ascending: false });
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false });
     if (e) setError(e.message); else setProjects(data ?? []);
   }
 
@@ -285,6 +291,7 @@ export function Proyectos() {
         user_id: form.user_id,
         commission_percent: form.commission_percent ? Number(form.commission_percent) : null,
         contact_name: form.contact_name.trim() || null,
+        contact_email: form.contact_email.trim() || null,
         presentation_at: form.presentation_at ? new Date(form.presentation_at).toISOString() : null,
         observations: form.observations.trim() || null,
         created_by: profile.id,
@@ -314,6 +321,7 @@ export function Proyectos() {
   async function openProject(p: any) {
     setCurrent(p);
     setDetailTab("items");
+    setViewingDeliveryNote(null);
     setScreen("detail");
     await loadDetail(p);
   }
@@ -327,6 +335,7 @@ export function Proyectos() {
       user_id: p.user_id || "",
       commission_percent: p.commission_percent != null ? String(p.commission_percent) : "",
       contact_name: p.contact_name || "",
+      contact_email: p.contact_email || "",
       presentation_at: toDatetimeLocal(p.presentation_at),
       observations: p.observations || "",
     });
@@ -349,6 +358,7 @@ export function Proyectos() {
       user_id: editProjectDraft.user_id,
       commission_percent: editProjectDraft.commission_percent ? Number(editProjectDraft.commission_percent) : null,
       contact_name: editProjectDraft.contact_name.trim() || null,
+      contact_email: editProjectDraft.contact_email.trim() || null,
       presentation_at: editProjectDraft.presentation_at ? new Date(editProjectDraft.presentation_at).toISOString() : null,
       observations: editProjectDraft.observations.trim() || null,
     }).eq("id", editProjectTarget.id);
@@ -402,12 +412,26 @@ export function Proyectos() {
       setDocuments(doc.data ?? []);
 
       if (p.quotation_id) {
-        const { data: sale } = await supabase.from("sales").select("id,sale_number,status,total,amount_paid,balance,quotation_id").eq("quotation_id", p.quotation_id).maybeSingle();
+        const { data: sale } = await supabase.from("sales").select("id,sale_number,status,total,amount_paid,balance,quotation_id,sale_date,purchase_order_number,subject").eq("quotation_id", p.quotation_id).maybeSingle();
         setLinkedSale(sale ?? null);
         await loadQuotationPreview(p.quotation_id);
       } else {
         setLinkedSale(null);
         setQuotationPreview(null);
+      }
+
+      // Nota de entrega: solo tiene sentido una vez que el proyecto ya tiene
+      // una venta generada (se emite desde Ventas; acá solo se muestra).
+      if (p.sale_id) {
+        const [statusRes, notesRes] = await Promise.all([
+          supabase.from("sale_items_delivery_status").select("*").eq("sale_id", p.sale_id),
+          supabase.from("delivery_notes").select("id,delivery_number,sale_id,delivery_date,received_by,notes,created_at").eq("sale_id", p.sale_id).order("created_at"),
+        ]);
+        setSaleDeliveryStatus(statusRes.data ?? []);
+        setProjectDeliveryNotes(notesRes.data ?? []);
+      } else {
+        setSaleDeliveryStatus([]);
+        setProjectDeliveryNotes([]);
       }
 
       if (isAdmin) {
@@ -441,7 +465,7 @@ export function Proyectos() {
 
   async function refreshCurrentProject() {
     if (!current) return;
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,presentation_at,created_at").eq("id", current.id).single();
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").eq("id", current.id).single();
     if (e) { setError(e.message); return; }
     setCurrent(data);
     await loadDetail(data);
@@ -615,6 +639,22 @@ export function Proyectos() {
     const { error: e } = await supabase.from("projects").update({ sale_id: linkedSale.id, status: "en_compra" }).eq("id", current.id);
     if (e) { setError(e.message); return; }
     await refreshCurrentProject();
+  }
+
+  async function viewProjectDeliveryNote(note: any, printAfter = false) {
+    setError("");
+    const { data, error: e } = await supabase
+      .from("delivery_note_items")
+      .select("id,quantity,sale_item_id")
+      .eq("delivery_note_id", note.id);
+    if (e) { setError(e.message); return; }
+    const withInfo = (data ?? []).map((di: any) => {
+      const st = saleDeliveryStatus.find(s => s.sale_item_id === di.sale_item_id);
+      return { ...di, sku: st?.sku, description: st?.description, unit: st?.unit, client_item_code: st?.client_item_code };
+    });
+    setViewingDeliveryNote(note);
+    setViewingDeliveryItems(withInfo);
+    if (printAfter) setTimeout(() => window.print(), 120);
   }
 
   async function refreshProfitability() {
@@ -1048,8 +1088,9 @@ export function Proyectos() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Nombre de contacto (cotización)" value={form.contact_name} onChange={v => setForm({ ...form, contact_name: v })} />
-            <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={form.presentation_at} onChange={e => setForm({ ...form, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+            <Field label="Correo del contacto o cliente" value={form.contact_email} onChange={v => setForm({ ...form, contact_email: v })} />
           </div>
+          <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={form.presentation_at} onChange={e => setForm({ ...form, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <label className="block text-xs text-[#5B6670]">Comisión variable (%)<input type="number" min="0" step="0.01" value={form.commission_percent} onChange={e => setForm({ ...form, commission_percent: e.target.value })} placeholder="Ej.: 3" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <label className="block text-xs text-[#5B6670]">Observaciones<textarea rows={3} value={form.observations} onChange={e => setForm({ ...form, observations: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
         </div>
@@ -1098,7 +1139,7 @@ export function Proyectos() {
               </div>
               <div className="text-xs text-[#5B6670] mt-1">{current.project_number} · Cliente: {customers.find(c => c.id === current.customer_id)?.name || "—"} · Vendedor: {sellers.find(s => s.id === current.user_id)?.full_name || "—"}</div>
               {current.client_reference && <div className="text-xs text-[#5B6670]">Ref. cliente: {current.client_reference}</div>}
-              {(current.contact_name || current.presentation_at) && <div className="text-xs text-[#5B6670]">{current.contact_name && <>Contacto: {current.contact_name}</>}{current.contact_name && current.presentation_at && " · "}{current.presentation_at && <>Presentación: {formatDateTime(current.presentation_at)}</>}</div>}
+              {(current.contact_name || current.contact_email || current.presentation_at) && <div className="text-xs text-[#5B6670]">{current.contact_name && <>Contacto: {current.contact_name}</>}{current.contact_name && current.contact_email && " · "}{current.contact_email && <>{current.contact_email}</>}{(current.contact_name || current.contact_email) && current.presentation_at && " · "}{current.presentation_at && <>Presentación: {formatDateTime(current.presentation_at)}</>}</div>}
             </div>
             <div className="flex flex-wrap gap-2 items-start">
               <button onClick={() => openEditProject(current)} className="px-3 py-2 rounded-xl border text-[#1B3A6B] text-sm"><Pencil size={14} className="inline mr-1" />Editar proyecto</button>
@@ -1119,8 +1160,9 @@ export function Proyectos() {
             ["documentos", "Documentos", Upload],
             ["facturacion", "Facturación", FileText],
             ...(isAdmin ? [["rentabilidad", "Rentabilidad", BarChart3]] as any : []),
+            ["entrega", "Nota de entrega", PackageCheck],
           ].map(([key, label, Icon]: any) => (
-            <button key={key} onClick={() => setDetailTab(key)} className={`relative px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}>
+            <button key={key} onClick={() => { setDetailTab(key); setViewingDeliveryNote(null); }} className={`relative px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}>
               <Icon size={14} className="inline mr-1" />{label}
               {key === "facturacion" && invoiceAlertCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold align-middle">{invoiceAlertCount}</span>}
             </button>
@@ -1426,6 +1468,83 @@ export function Proyectos() {
             </div>
           </div> : <div className="text-sm italic text-[#5B6670] text-center py-8">Aún no hay datos suficientes de ventas/compras para calcular la rentabilidad de este proyecto.</div>}
         </div>}
+
+        {detailTab === "entrega" && !loading && <div className="space-y-4">
+          {!current.sale_id ? (
+            <div className="bg-white rounded-2xl p-8 text-center text-sm text-[#5B6670]">
+              La nota de entrega se genera automáticamente a partir de la nota de venta. Este proyecto todavía no tiene una venta generada.
+            </div>
+          ) : <div className="bg-white rounded-2xl p-5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-[#0F2647] text-sm">Notas de entrega de la venta {linkedSale?.sale_number || "—"}</h3>
+                <div className="text-xs text-[#5B6670]">Se emiten desde Ventas; acá puedes verlas e imprimirlas, sin precios.</div>
+              </div>
+              <button onClick={() => navigate(`/ventas?ver=${current.sale_id}`)} className="px-3 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><ShoppingBag size={14} className="inline mr-1" />Ir a la venta</button>
+            </div>
+            {projectDeliveryNotes.length === 0 && <div className="text-sm italic text-[#5B6670] py-4">Todavía no se emitió ninguna nota de entrega para esta venta.</div>}
+            {projectDeliveryNotes.map(dn => <div key={dn.id} className="flex items-center justify-between text-sm border-b py-2">
+              <span className="font-mono">{dn.delivery_number} · {formatDate(dn.delivery_date)}{dn.received_by ? ` · Recibió: ${dn.received_by}` : ""}</span>
+              <div className="flex gap-1">
+                <button title="Ver" onClick={() => viewProjectDeliveryNote(dn)} className="p-1.5 rounded border"><Eye size={14} /></button>
+                <button title="Imprimir" onClick={() => viewProjectDeliveryNote(dn, true)} className="p-1.5 rounded border"><Printer size={14} /></button>
+              </div>
+            </div>)}
+          </div>}
+
+          {viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
+            <table className="w-full border-collapse border border-black text-sm" style={{ fontFamily: "Calibri, Arial, sans-serif" }}>
+              <tbody>
+                <tr>
+                  <td colSpan={4} className="border border-black p-3 text-center align-middle"><div className="text-lg font-bold">{COMPANY.name}</div></td>
+                  <td colSpan={2} className="border border-black p-3 text-center align-middle"><div className="font-bold">NOTA DE ENTREGA</div><div className="font-bold font-mono">{viewingDeliveryNote.delivery_number}</div></td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="border border-black p-2 text-center">CLIENTE: <b>{customers.find(c => c.id === current.customer_id)?.name || "—"}</b></td>
+                  <td className="border border-black p-2 text-center">ORDEN DE COMPRA:</td>
+                  <td colSpan={2} className="border border-black p-2 text-center">FECHA</td>
+                </tr>
+                <tr>
+                  <td colSpan={3} className="border border-black p-2 text-center">OBJETO: <b>{linkedSale?.subject || "—"}</b></td>
+                  <td className="border border-black p-2 text-center">{linkedSale?.purchase_order_number || "—"}</td>
+                  <td colSpan={2} className="border border-black p-2 text-center">{formatDate(viewingDeliveryNote.delivery_date)}</td>
+                </tr>
+                <tr className="font-bold">
+                  <td className="border border-black p-2 text-center">Nº</td>
+                  <td className="border border-black p-2 text-center">ITEM</td>
+                  <td className="border border-black p-2 text-center">CODIGO</td>
+                  <td className="border border-black p-2 text-center">DESCRIPCIÓN</td>
+                  <td className="border border-black p-2 text-center">CANTIDAD</td>
+                  <td className="border border-black p-2 text-center">UM</td>
+                </tr>
+                {viewingDeliveryItems.map((i, n) => <tr key={i.id}>
+                  <td className="border border-black p-2 text-center">{n + 1}</td>
+                  <td className="border border-black p-2 text-center">{i.client_item_code || "—"}</td>
+                  <td className="border border-black p-2 text-center font-mono text-xs">{i.sku || "—"}</td>
+                  <td className="border border-black p-2 text-left">{i.description || "—"}</td>
+                  <td className="border border-black p-2 text-center">{qty(i.quantity)}</td>
+                  <td className="border border-black p-2 text-center">{i.unit || "unidad"}</td>
+                </tr>)}
+                <tr>
+                  <td colSpan={3} className="border border-black p-3 pt-10 text-center align-bottom">
+                    <div>Recibido Por:</div>
+                    <div className="font-semibold mt-1">{customers.find(c => c.id === current.customer_id)?.name || ""}</div>
+                    {viewingDeliveryNote.received_by && <div className="text-xs mt-1">{viewingDeliveryNote.received_by}</div>}
+                  </td>
+                  <td colSpan={3} className="border border-black p-3 pt-10 text-center align-bottom">
+                    <div>Entregado Por:</div>
+                    <div className="font-semibold mt-1">{COMPANY.name}</div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            {viewingDeliveryNote.notes && <div className="mt-4 text-xs print:mt-2"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
+            <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
+              <button onClick={() => setViewingDeliveryNote(null)} className="px-5 py-2.5 rounded-xl border">Cerrar</button>
+              <button onClick={() => window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2" />Imprimir / PDF</button>
+            </div>
+          </div>}
+        </div>}
       </div>}
 
       {screen === "reporte" && isAdmin && <div className="bg-white rounded-2xl p-5 space-y-4">
@@ -1456,8 +1575,9 @@ export function Proyectos() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <Field label="Nombre de contacto (cotización)" value={editProjectDraft.contact_name} onChange={v => setEditProjectDraft({ ...editProjectDraft, contact_name: v })} />
-            <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={editProjectDraft.presentation_at} onChange={e => setEditProjectDraft({ ...editProjectDraft, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+            <Field label="Correo del contacto o cliente" value={editProjectDraft.contact_email} onChange={v => setEditProjectDraft({ ...editProjectDraft, contact_email: v })} />
           </div>
+          <label className="block text-xs text-[#5B6670]">Fecha y hora de presentación<input type="datetime-local" value={editProjectDraft.presentation_at} onChange={e => setEditProjectDraft({ ...editProjectDraft, presentation_at: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <Field label="Comisión variable (%)" type="number" value={editProjectDraft.commission_percent} onChange={v => setEditProjectDraft({ ...editProjectDraft, commission_percent: v })} />
           <label className="block text-xs text-[#5B6670]">Observaciones<textarea rows={3} value={editProjectDraft.observations} onChange={e => setEditProjectDraft({ ...editProjectDraft, observations: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
           <button disabled={saving} onClick={saveEditProject} className="w-full py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Guardar cambios"}</button>
