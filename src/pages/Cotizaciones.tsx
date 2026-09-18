@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText, ShoppingBag, Pencil } from "lucide-react";
+import { Plus, Trash2, Printer, Search, ShoppingCart, Check, Eye, FileText, ShoppingBag, Pencil, PackagePlus } from "lucide-react";
 
 const COMPANY = {
   name: "SACIPETROL S.R.L.",
@@ -41,6 +41,7 @@ function formatDate(value?: string | null) {
 export function Cotizaciones() {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
   const isAdmin = profile?.role === "admin";
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingProjectLinked, setEditingProjectLinked] = useState(false);
@@ -64,6 +65,8 @@ export function Cotizaciones() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingView, setLoadingView] = useState(false);
+  const [showManual, setShowManual] = useState(false);
+  const [manual, setManual] = useState({ description: "", clientCode: "", unit: "unidad", quantity: "1", unitPrice: "0" });
 
   useEffect(() => {
     if (profile?.id) {
@@ -71,6 +74,17 @@ export function Cotizaciones() {
       load();
     }
   }, [profile?.id]);
+
+  // Enlace directo desde el Tablero (?ver=<id>): abre esa cotización en modo
+  // consulta apenas se cargó el listado.
+  useEffect(() => {
+    const verId = params.get("ver");
+    if (verId && quotations.length) {
+      const q = quotations.find(x => x.id === verId);
+      if (q) viewQuotation(q);
+      setParams({});
+    }
+  }, [quotations.length, params]);
 
   async function load() {
     setError("");
@@ -129,6 +143,7 @@ export function Cotizaciones() {
     setItems([...items, {
       product_id: p.product_id,
       sku: p.sku,
+      client_item_code: "",
       description: p.name,
       brand: p.brand || "",
       quantity: 1,
@@ -136,7 +151,31 @@ export function Cotizaciones() {
       discount: 0,
       stock: Number(p.stock),
       unit: p.unit || "unidad",
+      delivery_date: "",
     }]);
+  }
+
+  function addManual() {
+    setError("");
+    if (!manual.description.trim()) {
+      setError("Describe el ítem a cotizar.");
+      return;
+    }
+    setItems([...items, {
+      product_id: null,
+      sku: null,
+      client_item_code: manual.clientCode.trim() || "",
+      description: manual.description.trim(),
+      brand: "",
+      quantity: Number(manual.quantity || 1),
+      unit_price: Number(manual.unitPrice || 0),
+      discount: 0,
+      stock: undefined,
+      unit: manual.unit.trim() || "unidad",
+      delivery_date: "",
+    }]);
+    setManual({ description: "", clientCode: "", unit: "unidad", quantity: "1", unitPrice: "0" });
+    setShowManual(false);
   }
 
   const filteredProducts = useMemo(() => {
@@ -165,10 +204,13 @@ export function Cotizaciones() {
 
     for (const i of items) {
       if (Number(i.quantity) <= 0) {
-        setError(`La cantidad de ${i.sku} debe ser mayor a cero.`);
+        setError(`La cantidad de ${i.sku || i.description} debe ser mayor a cero.`);
         return;
       }
-      if (Number(i.quantity) > Number(i.stock) && !i.is_project_pending && !editingProjectLinked) {
+      // Los ítems sin producto de catálogo (product_id vacío) son propuestas —
+      // no tienen stock que validar; solo se exige stock a los que sí vienen
+      // de un producto real del catálogo.
+      if (i.product_id && Number(i.quantity) > Number(i.stock) && !i.is_project_pending && !editingProjectLinked) {
         setError(`Stock insuficiente para ${i.sku}. Disponible: ${qty(i.stock)}.`);
         return;
       }
@@ -199,8 +241,9 @@ export function Cotizaciones() {
 
         const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
           quotation_id: editingId,
-          product_id: i.product_id,
-          sku: i.sku,
+          product_id: i.product_id || null,
+          sku: i.sku || null,
+          client_item_code: i.client_item_code?.trim() || null,
           description: i.description,
           brand: i.brand || null,
           unit: i.unit || "unidad",
@@ -208,6 +251,7 @@ export function Cotizaciones() {
           unit_price: Number(i.unit_price),
           discount: Number(i.discount || 0),
           subtotal: Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0),
+          delivery_date: i.delivery_date || null,
         })));
         if (ie) throw ie;
 
@@ -233,8 +277,9 @@ export function Cotizaciones() {
 
         const { error: ie } = await supabase.from("quotation_items").insert(items.map(i => ({
           quotation_id: q.id,
-          product_id: i.product_id,
-          sku: i.sku,
+          product_id: i.product_id || null,
+          sku: i.sku || null,
+          client_item_code: i.client_item_code?.trim() || null,
           description: i.description,
           brand: i.brand || null,
           unit: i.unit || "unidad",
@@ -242,6 +287,7 @@ export function Cotizaciones() {
           unit_price: Number(i.unit_price),
           discount: Number(i.discount || 0),
           subtotal: Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0),
+          delivery_date: i.delivery_date || null,
         })));
         if (ie) throw ie;
 
@@ -262,7 +308,7 @@ export function Cotizaciones() {
     try {
       const { data: quoteItems, error: itemError } = await supabase
         .from("quotation_items")
-        .select("id,quotation_id,product_id,sku,description,brand,unit,quantity,unit_price,discount,subtotal")
+        .select("id,quotation_id,product_id,sku,client_item_code,description,brand,unit,quantity,unit_price,discount,subtotal,delivery_date")
         .eq("quotation_id", q.id)
         .order("id");
       if (itemError) throw itemError;
@@ -346,7 +392,7 @@ export function Cotizaciones() {
     try {
       const { data: quoteItems, error: itemError } = await supabase
         .from("quotation_items")
-        .select("id,quotation_id,product_id,sku,description,brand,unit,quantity,unit_price,discount,subtotal")
+        .select("id,quotation_id,product_id,sku,client_item_code,description,brand,unit,quantity,unit_price,discount,subtotal,delivery_date")
         .eq("quotation_id", q.id)
         .order("id");
       if (itemError) throw itemError;
@@ -475,8 +521,8 @@ export function Cotizaciones() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th></tr></thead>
-              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td></tr>)}</tbody>
+              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Cód. cliente</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th><th>Entrega</th></tr></thead>
+              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id || n} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku || "—"}</td><td className="font-mono text-xs">{i.client_item_code || "—"}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td><td className="text-xs whitespace-nowrap">{i.delivery_date ? formatDate(i.delivery_date) : "—"}</td></tr>)}</tbody>
             </table>
           </div>
 
@@ -559,6 +605,26 @@ export function Cotizaciones() {
               })}
               {filteredProducts.length === 0 && <div className="p-8 text-center text-sm italic text-[#5B6670]">No se encontraron productos.</div>}
             </div>
+
+            <div className="border-t pt-4">
+              {!showManual
+                ? <button onClick={() => setShowManual(true)} className="w-full py-2.5 rounded-xl border border-dashed border-[#1B3A6B] text-[#1B3A6B] text-sm"><PackagePlus size={15} className="inline mr-1"/>Cotizar ítem sin producto del catálogo</button>
+                : <div className="border rounded-xl p-3 space-y-2 bg-slate-50">
+                    <div className="text-xs font-semibold text-[#0F2647]">Ítem sin catálogo</div>
+                    <div className="text-[11px] text-[#5B6670]">Para algo que el cliente pide y que todavía no tienes cargado como producto. Se guarda igual, con la descripción que escribas.</div>
+                    <input value={manual.description} onChange={e => setManual({ ...manual, description: e.target.value })} placeholder="Descripción del ítem *" className="w-full border rounded-lg p-2 text-sm"/>
+                    <input value={manual.clientCode} onChange={e => setManual({ ...manual, clientCode: e.target.value })} placeholder="Código del cliente (opcional)" className="w-full border rounded-lg p-2 text-sm"/>
+                    <div className="grid grid-cols-3 gap-2">
+                      <input type="number" min="1" value={manual.quantity} onChange={e => setManual({ ...manual, quantity: e.target.value })} placeholder="Cant." className="border rounded-lg p-2 text-sm"/>
+                      <input value={manual.unit} onChange={e => setManual({ ...manual, unit: e.target.value })} placeholder="Unidad" className="border rounded-lg p-2 text-sm"/>
+                      <input type="number" min="0" step="0.01" value={manual.unitPrice} onChange={e => setManual({ ...manual, unitPrice: e.target.value })} placeholder="Precio unit." className="border rounded-lg p-2 text-sm"/>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowManual(false)} className="flex-1 py-2 rounded-lg border text-xs">Cancelar</button>
+                      <button onClick={addManual} className="flex-1 py-2 rounded-lg bg-[#1B3A6B] text-white text-xs">Agregar a la cotización</button>
+                    </div>
+                  </div>}
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl p-5">
@@ -566,17 +632,23 @@ export function Cotizaciones() {
 
             {items.length === 0 && <div className="border border-dashed rounded-xl p-8 text-center text-sm text-[#5B6670]">Selecciona uno o más productos del listado de la izquierda.</div>}
 
-            {items.map((i, idx) => <div key={i.product_id} className="border-b py-3">
+            {items.map((i, idx) => <div key={i.id || i.product_id || `manual-${idx}`} className="border-b py-3">
               <div className="flex justify-between gap-3 text-sm">
-                <span><b>{i.sku}</b> · {i.description}<span className="block text-xs text-[#5B6670]">Marca: {i.brand || "—"}</span></span>
-                <button title="Quitar producto" onClick={() => setItems(items.filter((_, x) => x !== idx))}><Trash2 size={16} className="text-red-600"/></button>
+                <span>{i.sku ? <b>{i.sku}</b> : <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle mr-1">SIN CATÁLOGO</span>} · {i.description}<span className="block text-xs text-[#5B6670]">Marca: {i.brand || "—"}</span></span>
+                <button title="Quitar ítem" onClick={() => setItems(items.filter((_, x) => x !== idx))}><Trash2 size={16} className="text-red-600"/></button>
               </div>
               <div className="grid grid-cols-3 gap-2 mt-2">
-                <label className="text-[11px] text-[#5B6670]">Cantidad<input type="number" min="1" max={(i.is_project_pending || editingProjectLinked) ? undefined : i.stock} value={i.quantity} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, quantity: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
+                <label className="text-[11px] text-[#5B6670]">Cantidad<input type="number" min="1" max={(!i.product_id || i.is_project_pending || editingProjectLinked) ? undefined : i.stock} value={i.quantity} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, quantity: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Precio unitario<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, unit_price: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <div className="text-[11px] text-[#5B6670]">Total<div className="text-sm p-2 mt-1 font-medium">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</div></div>
               </div>
-              {i.is_project_pending
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <label className="text-[11px] text-[#5B6670]">Código del cliente<input value={i.client_item_code || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, client_item_code: e.target.value } : x))} placeholder="Opcional" className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
+                <label className="text-[11px] text-[#5B6670]">Fecha de entrega<input type="date" value={i.delivery_date || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, delivery_date: e.target.value } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
+              </div>
+              {!i.product_id
+                ? <div className="text-xs text-[#5B6670] mt-1">Ítem sin producto de catálogo — no requiere stock para cotizarse.</div>
+                : i.is_project_pending
                 ? <div className="text-xs text-amber-700 mt-1">Producto de proyecto pendiente de compra — todavía no tiene stock real, no se exige disponibilidad para actualizar esta cotización.</div>
                 : editingProjectLinked
                 ? <div className="text-xs text-[#5B6670] mt-1">Disponible: {qty(i.stock)} {i.unit} — al ser una cotización de proyecto no se exige stock disponible para actualizarla.</div>

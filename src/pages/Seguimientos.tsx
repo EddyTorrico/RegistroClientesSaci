@@ -3,10 +3,20 @@ import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Phone, MessageCircle, MapPin, Package, CalendarClock, Search, X } from "lucide-react";
+import { Phone, MessageCircle, MapPin, Package, CalendarClock, Search, X, FileText, ShoppingBag, Truck, Building2 } from "lucide-react";
 
 const ICONOS: Record<string, any> = { Llamar: Phone, WhatsApp: MessageCircle, Visitar: MapPin, "Enviar cotización": Package, "Hacer seguimiento a la cotización": Package };
 const NEXT_ACTIONS = ["Llamar", "Visitar", "WhatsApp", "Enviar cotización", "Hacer seguimiento a la cotización", "Enviar información", "Reunión comercial"];
+
+// Indica a qué tipo de registro está vinculado el seguimiento (cliente,
+// cotización, venta o entrega) y a dónde debe llevar el clic.
+function vinculo(s: any) {
+  if (s.quotation_id) return { label: "Cotización", icon: FileText, href: `/cotizaciones?ver=${s.quotation_id}` };
+  if (s.sale_id && String(s.type || "").startsWith("Cobranza")) return { label: "Cobranza", icon: Truck, href: `/cobranza?venta=${s.sale_id}` };
+  if (s.sale_id) return { label: "Venta", icon: ShoppingBag, href: `/ventas?ver=${s.sale_id}` };
+  if (s.delivery_note_id) return { label: "Entrega", icon: Truck, href: `/ventas` };
+  return { label: "Cliente", icon: Building2, href: `/clientes/${s.customer_id}` };
+}
 
 function hoyISO() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
 function sumarDiasISO(n: number) { const d=new Date(); d.setHours(12,0,0,0); d.setDate(d.getDate()+n); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
@@ -110,15 +120,16 @@ export function Seguimientos() {
 
   function Lista({ lista }: { lista: any[] }) {
     return <div className="space-y-2">{lista.map((s) => {
-      const Icon = ICONOS[s.type] ?? CalendarClock; const sem = semaforo(s);
+      const Icon = ICONOS[s.type] ?? CalendarClock; const sem = semaforo(s); const v = vinculo(s); const VIcon = v.icon;
       return <div key={s.id} className="flex items-center gap-3 px-3.5 py-3 rounded-xl border-l-4 border-y border-r" style={{ borderLeftColor: sem.dot, borderTopColor:"#ECEEF1", borderRightColor:"#ECEEF1", borderBottomColor:"#ECEEF1" }}>
         <button onClick={() => s.completed ? reopen(s) : openComplete(s)} className="w-5 h-5 rounded-full border flex items-center justify-center shrink-0" style={{ borderColor: s.completed ? "#3E7A56" : "#C7CCD2", backgroundColor: s.completed ? "#3E7A56" : "white" }}>{s.completed && <span className="text-white text-[10px]">✓</span>}</button>
         <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 bg-[#EEF0F2] text-[#1B3A6B]"><Icon size={16} /></div>
-        <button onClick={() => navigate(`/clientes/${s.customer_id}`)} className="flex-1 text-left min-w-0">
+        <button onClick={() => navigate(v.href)} className="flex-1 text-left min-w-0">
           <div className="text-sm font-medium text-[#0F2647] truncate" style={{ textDecoration: s.completed ? "line-through" : "none" }}>{s.customers?.name}</div>
           <div className="text-xs text-[#5B6670]">{s.type} · {fechaBO(s.scheduled_date)} {s.notes && `· ${s.notes}`}</div>
           {s.profiles?.full_name && <div className="text-[11px] text-[#8A929A] mt-0.5">{s.profiles.full_name}</div>}
         </button>
+        <span title={`Vinculado a: ${v.label}`} className="hidden sm:inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-full shrink-0 bg-[#EEF0F2] text-[#5B6670]"><VIcon size={11}/>{v.label}</span>
         <span className="text-[10px] px-2 py-1 rounded-full shrink-0" style={{ backgroundColor:sem.bg, color:sem.text }}>{sem.label}</span>
       </div>;
     })}{lista.length===0 && <div className="text-sm italic text-[#5B6670]">Nada por aquí.</div>}</div>;
