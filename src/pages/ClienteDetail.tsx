@@ -138,7 +138,7 @@ export function ClienteDetail() {
                   <div>
                     <div className="text-sm text-[#0F2647]">{v.result}</div>
                     <div className="text-xs text-[#5B6670]">
-                      {new Date(v.visit_date).toLocaleDateString("es-BO")} · {v.profiles?.full_name}
+                      {new Date(v.visit_date).toLocaleDateString("es-BO")} {new Date(v.visit_date).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })} · {v.profiles?.full_name}
                     </div>
                   </div>
                   {v.interest_level && (

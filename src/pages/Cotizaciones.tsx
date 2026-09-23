@@ -521,8 +521,8 @@ export function Cotizaciones() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Cód. cliente</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th><th>Entrega</th></tr></thead>
-              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id || n} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku || "—"}</td><td className="font-mono text-xs">{i.client_item_code || "—"}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td><td className="text-xs whitespace-nowrap">{i.delivery_date ? formatDate(i.delivery_date) : "—"}</td></tr>)}</tbody>
+              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th><th>Entrega</th></tr></thead>
+              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id || n} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku || "—"}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td><td className="text-xs whitespace-nowrap">{i.delivery_date ? formatDate(i.delivery_date) : "—"}</td></tr>)}</tbody>
             </table>
           </div>
 
@@ -634,7 +634,7 @@ export function Cotizaciones() {
 
             {items.map((i, idx) => <div key={i.id || i.product_id || `manual-${idx}`} className="border-b py-3">
               <div className="flex flex-wrap justify-between gap-3 text-sm">
-                <span>{i.sku ? <b>{i.sku}</b> : <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle mr-1">SIN CATÁLOGO</span>} · {i.description}<span className="block text-xs text-[#5B6670]">Marca: {i.brand || "—"}</span></span>
+                <span>{i.sku ? <b>{i.sku}</b> : <span className="inline-flex px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-semibold align-middle mr-1">SIN CATÁLOGO</span>} · {i.description}</span>
                 <button title="Quitar ítem" onClick={() => setItems(items.filter((_, x) => x !== idx))}><Trash2 size={16} className="text-red-600"/></button>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
@@ -642,7 +642,8 @@ export function Cotizaciones() {
                 <label className="text-[11px] text-[#5B6670]">Precio unitario<input type="number" min="0" step="0.01" value={i.unit_price} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, unit_price: Number(e.target.value) } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <div className="text-[11px] text-[#5B6670]">Total<div className="text-sm p-2 mt-1 font-medium">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</div></div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2">
+                <label className="text-[11px] text-[#5B6670]">Marca<input value={i.brand || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, brand: e.target.value } : x))} placeholder="Opcional" className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Código del cliente<input value={i.client_item_code || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, client_item_code: e.target.value } : x))} placeholder="Opcional" className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
                 <label className="text-[11px] text-[#5B6670]">Fecha de entrega<input type="date" value={i.delivery_date || ""} onChange={e => setItems(items.map((x, n) => n === idx ? { ...x, delivery_date: e.target.value } : x))} className="w-full border rounded-lg p-2 text-sm mt-1"/></label>
               </div>

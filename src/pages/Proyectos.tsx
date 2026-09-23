@@ -1493,6 +1493,7 @@ export function Proyectos() {
           </div>}
 
           {viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
+            <div className="overflow-x-auto">
             <table className="w-full border-collapse border border-black text-sm" style={{ fontFamily: "Calibri, Arial, sans-serif" }}>
               <tbody>
                 <tr>
@@ -1538,6 +1539,7 @@ export function Proyectos() {
                 </tr>
               </tbody>
             </table>
+            </div>
             {viewingDeliveryNote.notes && <div className="mt-4 text-xs print:mt-2"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
             <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
               <button onClick={() => setViewingDeliveryNote(null)} className="px-5 py-2.5 rounded-xl border">Cerrar</button>

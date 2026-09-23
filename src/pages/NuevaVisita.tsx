@@ -1,9 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { MapPin, Camera, Check, ChevronLeft, ChevronRight, UserRound, Phone, Mail } from "lucide-react";
+import { MapPin, Camera, Check, ChevronLeft, ChevronRight, UserRound, Phone, Mail, X } from "lucide-react";
 
 const STEPS = ["Cliente", "Contacto", "Ubicación", "Productos", "Proveedor", "Oportunidad", "Resultado"];
 const TIPOS = ["Ferretería", "Tienda eléctrica", "Distribuidor", "Constructor", "Contratista", "Electricista", "Industria", "Institución", "Otro"];
@@ -19,6 +19,8 @@ export function NuevaVisita() {
   const [modo, setModo] = useState<"nuevo" | "existente">("nuevo");
   const [clienteId, setClienteId] = useState("");
   const [foto, setFoto] = useState<File | null>(null);
+  const fotoPreview = useMemo(() => (foto ? URL.createObjectURL(foto) : null), [foto]);
+  useEffect(() => () => { if (fotoPreview) URL.revokeObjectURL(fotoPreview); }, [fotoPreview]);
   const [coords, setCoords] = useState<any>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState("");
@@ -105,11 +107,21 @@ export function NuevaVisita() {
         if (e) throw e;
       }
 
+      // La foto se sube aparte (Storage) del resto de la visita (base de
+      // datos): si la subida falla, no bloqueamos el guardado de toda la
+      // visita (eso podría duplicar el cliente si el usuario reintenta desde
+      // cero) — en vez de eso avisamos claramente con una alerta, ya que la
+      // pantalla cambia de inmediato al guardar y el aviso en pantalla no
+      // alcanzaría a verse.
       let photoUrl = null;
       if (foto) {
         const path = `${cid}/${Date.now()}-${foto.name}`;
         const { error: e } = await supabase.storage.from("visit-photos").upload(path, foto);
-        if (!e) photoUrl = supabase.storage.from("visit-photos").getPublicUrl(path).data.publicUrl;
+        if (e) {
+          window.alert(`La visita se está guardando, pero la fotografía NO se pudo subir (${e.message}). El resto de los datos de la visita sí se guardarán.`);
+        } else {
+          photoUrl = supabase.storage.from("visit-photos").getPublicUrl(path).data.publicUrl;
+        }
       }
 
       for (const p of form.productos) {
@@ -202,7 +214,17 @@ export function NuevaVisita() {
           <input placeholder="Zona" value={form.zona} onChange={e => patch({ zona: e.target.value })} className={input}/>
           <input placeholder="Ciudad" value={form.ciudad} onChange={e => patch({ ciudad: e.target.value })} className={`${input} col-span-2`}/>
         </div>
-        <label className="flex flex-col items-center py-5 border border-dashed rounded-xl cursor-pointer text-sm text-[#5B6670]"><Camera size={20}/>{foto ? foto.name : "Tomar o subir fotografía"}<input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => setFoto(e.target.files?.[0] || null)}/></label>
+        {fotoPreview ? <div className="border rounded-xl p-3 space-y-2">
+          <div className="flex items-center gap-3">
+            <img src={fotoPreview} alt="Fotografía de la visita" className="w-20 h-20 rounded-lg object-cover border shrink-0"/>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm text-[#0F2647] font-medium truncate">{foto?.name}</div>
+              <div className="text-xs text-[#3E7A56]"><Check size={12} className="inline mr-1"/>Foto lista, se guardará con la visita.</div>
+            </div>
+            <button type="button" onClick={() => setFoto(null)} title="Quitar foto" className="p-2 rounded-lg border text-red-600 shrink-0"><X size={16}/></button>
+          </div>
+          <label className="flex items-center justify-center py-2 border border-dashed rounded-xl cursor-pointer text-xs text-[#5B6670]"><Camera size={15} className="mr-1"/>Reemplazar fotografía<input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => setFoto(e.target.files?.[0] || null)}/></label>
+        </div> : <label className="flex flex-col items-center py-5 border border-dashed rounded-xl cursor-pointer text-sm text-[#5B6670]"><Camera size={20}/>Tomar o subir fotografía<input type="file" accept="image/*" capture="environment" className="hidden" onChange={e => setFoto(e.target.files?.[0] || null)}/></label>}
       </div>}
 
       {step === 3 && <div>
