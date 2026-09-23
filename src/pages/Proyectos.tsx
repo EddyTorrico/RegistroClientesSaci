@@ -48,7 +48,7 @@ const STATUS_BADGE: Record<string, string> = {
 const EXPENSE_LABELS: Record<string, string> = { transporte: "Transporte", insumos: "Insumos", comision: "Comisión", otro: "Otro" };
 
 const emptyForm = { name: "", client_reference: "", customer_id: "", user_id: "", commission_percent: "", contact_name: "", contact_email: "", presentation_at: "", observations: "" };
-const emptyItemDraft = { client_description: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
+const emptyItemDraft = { client_description: "", brand: "", unit: "unidad", requested_quantity: "1", estimated_unit_cost: "0", markup_percent: "20" };
 const emptyPurchase = { supplier: "", purchase_date: isoToday(), has_invoice: true, invoice_number: "", invoice_amount: "", notes: "" };
 const emptyPurchaseItem = { project_item_id: "", product_id: "", quantity: "1", unit_cost: "0" };
 const emptyExpense = { expense_type: "transporte", description: "", amount: "", has_invoice: false, invoice_number: "" };
@@ -258,6 +258,7 @@ export function Proyectos() {
     const it = newItems[idx];
     setItemDraft({
       client_description: it.client_description || "",
+      brand: it.brand || "",
       unit: it.unit || "unidad",
       requested_quantity: String(it.requested_quantity ?? "1"),
       estimated_unit_cost: String(it.estimated_unit_cost ?? "0"),
@@ -301,6 +302,7 @@ export function Proyectos() {
       const { error: ie } = await supabase.from("project_items").insert(newItems.map(i => ({
         project_id: p.id,
         client_description: i.client_description.trim(),
+        brand: i.brand?.trim() || null,
         unit: i.unit.trim() || "unidad",
         requested_quantity: i.requested_quantity,
         estimated_unit_cost: i.estimated_unit_cost,
@@ -382,7 +384,7 @@ export function Proyectos() {
     setError("");
     try {
       const [i, pu, ex, doc, inv] = await Promise.all([
-        supabase.from("project_items").select("id,project_id,product_id,client_item_code,client_description,internal_description,unit,requested_quantity,estimated_unit_cost,markup_percent,proposed_unit_price,created_at").eq("project_id", p.id).order("created_at"),
+        supabase.from("project_items").select("id,project_id,product_id,client_item_code,client_description,internal_description,brand,unit,requested_quantity,estimated_unit_cost,markup_percent,proposed_unit_price,created_at").eq("project_id", p.id).order("created_at"),
         supabase.from("project_purchases").select("id,project_id,supplier,purchase_date,has_invoice,invoice_number,invoice_amount,receipt_url,notes,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
         supabase.from("project_expenses").select("id,project_id,expense_type,description,amount,has_invoice,invoice_number,receipt_url,created_at").eq("project_id", p.id).order("created_at", { ascending: false }),
         supabase.from("project_documents").select("id,project_id,document_type,is_backup_quote,file_url,description,uploaded_by,uploaded_at").eq("project_id", p.id).order("uploaded_at", { ascending: false }),
@@ -483,6 +485,7 @@ export function Proyectos() {
     const markup = Number(itemEditDraft.markup_percent) || 0;
     const payload = {
       client_description: itemEditDraft.client_description.trim(),
+      brand: itemEditDraft.brand?.trim() || null,
       unit: itemEditDraft.unit.trim() || "unidad",
       requested_quantity: Number(itemEditDraft.requested_quantity),
       estimated_unit_cost: cost,
@@ -501,6 +504,7 @@ export function Proyectos() {
   function editExistingItem(item: any) {
     setItemEditDraft({
       client_description: item.client_description || "",
+      brand: item.brand || "",
       unit: item.unit || "unidad",
       requested_quantity: String(item.requested_quantity ?? "1"),
       estimated_unit_cost: String(item.estimated_unit_cost ?? "0"),
@@ -599,7 +603,7 @@ export function Proyectos() {
         product_id: null,
         sku: null,
         description: i.internal_description || i.client_description,
-        brand: null,
+        brand: i.brand || null,
         unit: i.unit || "unidad",
         quantity: Number(i.requested_quantity),
         unit_price: Number(i.proposed_unit_price),
@@ -1101,6 +1105,7 @@ export function Proyectos() {
           <div className="border rounded-xl p-3 space-y-2 bg-[#FAFBFC]">
             <label className="block text-xs text-[#5B6670]">Unidad<input value={itemDraft.unit} onChange={e => setItemDraft({ ...itemDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción del ítem (tal como lo pide el cliente)<textarea rows={2} value={itemDraft.client_description} onChange={e => setItemDraft({ ...itemDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+            <label className="block text-xs text-[#5B6670]">Marca<input value={itemDraft.brand} onChange={e => setItemDraft({ ...itemDraft, brand: e.target.value })} placeholder="Opcional" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemDraft.requested_quantity} onChange={v => setItemDraft({ ...itemDraft, requested_quantity: v })} />
               <Field label="Costo estimado (cotiz. externa)" type="number" value={itemDraft.estimated_unit_cost} onChange={v => setItemDraft({ ...itemDraft, estimated_unit_cost: v })} />
@@ -1115,7 +1120,7 @@ export function Proyectos() {
 
           <div className="max-h-64 overflow-auto divide-y">
             {newItems.map((i, idx) => <div key={idx} className="py-2 flex justify-between gap-2 text-sm">
-              <div>{i.client_description}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}</div></div>
+              <div>{i.client_description}{i.brand && <span className="text-xs text-[#5B6670]"> · Marca: {i.brand}</span>}<div className="text-xs text-[#5B6670]">{qty(i.requested_quantity)} {i.unit} · Costo Bs {money(i.estimated_unit_cost)} · +{i.markup_percent}% → Bs {money(i.proposed_unit_price)}</div></div>
               <div className="flex gap-2 shrink-0">
                 <button onClick={() => editDraftItem(idx)}><Pencil size={15} className="text-[#1B3A6B]" /></button>
                 <button onClick={() => { setNewItems(newItems.filter((_, x) => x !== idx)); if (editingDraftIndex === idx) cancelDraftEdit(); }}><Trash2 size={15} className="text-red-600" /></button>
@@ -1174,11 +1179,12 @@ export function Proyectos() {
         {detailTab === "items" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Descripción</th><th className="text-right">Cant.</th><th className="text-right">Costo est.</th><th className="text-right">Markup</th><th className="text-right">Precio propuesto</th><th></th></tr></thead>
+              <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th className="text-right">Costo est.</th><th className="text-right">Markup</th><th className="text-right">Precio propuesto</th><th></th></tr></thead>
               <tbody>
                 {items.map(i => (
                   <tr key={i.id} className="border-b align-top">
                     <td className="py-2 min-w-48">{i.client_description}</td>
+                    <td>{i.brand || "—"}</td>
                     <td className="text-right">{qty(i.requested_quantity)} {i.unit}</td>
                     <td className="text-right">Bs {money(i.estimated_unit_cost)}</td>
                     <td className="text-right">{i.markup_percent ?? 0}%</td>
@@ -1189,7 +1195,7 @@ export function Proyectos() {
                     </div></td>
                   </tr>
                 ))}
-                {items.length === 0 && <tr><td colSpan={6} className="py-8 text-center italic text-[#5B6670]">Sin ítems registrados.</td></tr>}
+                {items.length === 0 && <tr><td colSpan={7} className="py-8 text-center italic text-[#5B6670]">Sin ítems registrados.</td></tr>}
               </tbody>
             </table>
           </div>
@@ -1200,6 +1206,7 @@ export function Proyectos() {
             <p className="text-xs text-[#5B6670]">Puedes actualizar el costo estimado y el markup en cualquier momento, por ejemplo cuando ya tengas la cotización real del proveedor — el precio propuesto se recalcula automáticamente. No hace falta vincular ni crear ningún producto del catálogo todavía — eso se hace recién cuando ganes el proyecto y registres la compra real, en la pestaña Compras.</p>
             <label className="block text-xs text-[#5B6670]">Unidad<input value={itemEditDraft.unit} onChange={e => setItemEditDraft({ ...itemEditDraft, unit: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <label className="block text-xs text-[#5B6670]">Descripción<textarea rows={2} value={itemEditDraft.client_description} onChange={e => setItemEditDraft({ ...itemEditDraft, client_description: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
+            <label className="block text-xs text-[#5B6670]">Marca<input value={itemEditDraft.brand} onChange={e => setItemEditDraft({ ...itemEditDraft, brand: e.target.value })} placeholder="Opcional" className="w-full border rounded-xl p-2.5 mt-1 text-sm" /></label>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
               <Field label="Cantidad" type="number" value={itemEditDraft.requested_quantity} onChange={v => setItemEditDraft({ ...itemEditDraft, requested_quantity: v })} />
               <Field label="Costo estimado" type="number" value={itemEditDraft.estimated_unit_cost} onChange={v => setItemEditDraft({ ...itemEditDraft, estimated_unit_cost: v })} />

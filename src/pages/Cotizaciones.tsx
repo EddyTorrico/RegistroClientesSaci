@@ -521,8 +521,8 @@ export function Cotizaciones() {
 
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th><th>Entrega</th></tr></thead>
-              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id || n} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku || "—"}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td><td className="text-xs whitespace-nowrap">{i.delivery_date ? formatDate(i.delivery_date) : "—"}</td></tr>)}</tbody>
+              <thead><tr className="border-b text-left"><th className="py-2">Ítem</th><th>Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio Unit.</th><th className="text-right">Total</th></tr></thead>
+              <tbody>{items.map((i, n) => <tr key={i.id || i.product_id || n} className="border-b align-top"><td className="py-2">{n + 1}</td><td className="font-mono text-xs">{i.sku || "—"}</td><td>{i.description}</td><td>{i.brand || "—"}</td><td className="text-right">{qty(i.quantity)}</td><td>{i.unit}</td><td className="text-right whitespace-nowrap">Bs {money(i.unit_price)}</td><td className="text-right whitespace-nowrap">Bs {money(Number(i.quantity) * Number(i.unit_price) - Number(i.discount || 0))}</td></tr>)}</tbody>
             </table>
           </div>
 

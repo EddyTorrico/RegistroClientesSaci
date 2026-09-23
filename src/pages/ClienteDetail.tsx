@@ -40,7 +40,7 @@ export function ClienteDetail() {
     setContactos(cont ?? []);
     const { data: vis } = await supabase
       .from("visits")
-      .select("id, visit_date, result, interest_level, user_id, profiles(full_name)")
+      .select("id, visit_date, result, interest_level, user_id, photo_url, latitude, longitude, address, profiles(full_name)")
       .eq("customer_id", customerId)
       .order("visit_date", { ascending: false });
     setVisitas(vis ?? []);
@@ -134,15 +134,31 @@ export function ClienteDetail() {
             <div className="text-xs uppercase tracking-wide mb-3 text-[#5B6670]">Historial de visitas</div>
             <div className="space-y-2">
               {visitas.map((v) => (
-                <div key={v.id} className="flex items-center justify-between border-b pb-2 last:border-0 last:pb-0" style={{ borderColor: "#F1F2F4" }}>
-                  <div>
-                    <div className="text-sm text-[#0F2647]">{v.result}</div>
-                    <div className="text-xs text-[#5B6670]">
-                      {new Date(v.visit_date).toLocaleDateString("es-BO")} {new Date(v.visit_date).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })} · {v.profiles?.full_name}
+                <div key={v.id} className="flex items-start justify-between gap-3 border-b pb-2 last:border-0 last:pb-0" style={{ borderColor: "#F1F2F4" }}>
+                  <div className="flex items-start gap-3 min-w-0">
+                    {v.photo_url && (
+                      <a href={v.photo_url} target="_blank" rel="noreferrer" className="shrink-0">
+                        <img src={v.photo_url} alt="Foto de la visita" className="w-12 h-12 rounded-lg object-cover border" />
+                      </a>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-sm text-[#0F2647]">{v.result}</div>
+                      <div className="text-xs text-[#5B6670]">
+                        {new Date(v.visit_date).toLocaleDateString("es-BO")} {new Date(v.visit_date).toLocaleTimeString("es-BO", { hour: "2-digit", minute: "2-digit" })} · {v.profiles?.full_name}
+                      </div>
+                      {(v.latitude != null && v.longitude != null) ? (
+                        <a href={`https://www.google.com/maps?q=${v.latitude},${v.longitude}`} target="_blank" rel="noreferrer" className="text-xs text-[#1B3A6B] flex items-center gap-1 mt-0.5">
+                          <MapPin size={12} /> Ver ubicación
+                        </a>
+                      ) : v.address ? (
+                        <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(v.address)}`} target="_blank" rel="noreferrer" className="text-xs text-[#1B3A6B] flex items-center gap-1 mt-0.5">
+                          <MapPin size={12} /> Ver ubicación
+                        </a>
+                      ) : null}
                     </div>
                   </div>
                   {v.interest_level && (
-                    <span className="inline-flex items-center gap-1.5 text-xs">
+                    <span className="inline-flex items-center gap-1.5 text-xs shrink-0">
                       <span className="w-2 h-2 rounded-full" style={{ backgroundColor: interesColor[v.interest_level] }} />
                       {v.interest_level}
                     </span>
