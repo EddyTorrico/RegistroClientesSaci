@@ -367,10 +367,18 @@ export function Ventas() {
     setError("");
     if (!s || s.status === "anulada") return;
     if (Number(s.amount_paid || 0) > 0) { setError("La venta tiene pagos registrados. Regulariza la cobranza antes de eliminarla."); return; }
-    if (!window.confirm(`¿Eliminar la venta ${s.sale_number}? El stock de los productos vendidos volverá a estar disponible y la venta dejará de contar en los totales y reportes. Esta acción no se puede deshacer.`)) return;
+    // Un borrador nunca descontó stock (eso pasa recién al confirmar la
+    // venta), así que no hay nada que "anular" — se elimina de verdad con
+    // delete_draft_sale(). Cualquier otro estado sí descontó stock, así que
+    // usa cancel_sale() (anular), que además revierte ese stock.
+    const isDraft = s.status === "borrador";
+    const confirmMsg = isDraft
+      ? `¿Eliminar el borrador ${s.sale_number}? Como nunca se confirmó, no llegó a descontar stock ni a contar en reportes. Esta acción no se puede deshacer.`
+      : `¿Eliminar la venta ${s.sale_number}? El stock de los productos vendidos volverá a estar disponible y la venta dejará de contar en los totales y reportes. Esta acción no se puede deshacer.`;
+    if (!window.confirm(confirmMsg)) return;
     const reason = window.prompt("Motivo (opcional):") ?? "";
     setLoading(true);
-    const { data, error: e } = await supabase.rpc("cancel_sale", { p_sale_id: s.id, p_reason: reason || null });
+    const { data, error: e } = await supabase.rpc(isDraft ? "delete_draft_sale" : "cancel_sale", { p_sale_id: s.id, p_reason: reason || null });
     if (e) setError(e.message);
     else {
       if (saved?.id === s.id) setSaved(data);
@@ -415,7 +423,7 @@ export function Ventas() {
           <div className="relative md:w-80"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5B6670]"/><input value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} placeholder="VEN-2026-... o cliente" className="w-full border rounded-xl py-2.5 pl-9 pr-3 text-sm"/></div>
         </div>
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th><th>Pago</th><th>Estado</th><th className="text-right">Total</th><th className="text-right">Saldo</th><th className="text-right">Acciones</th></tr></thead>
-          <tbody>{filteredSales.map(s=><tr key={s.id} className="border-b hover:bg-[#FAFBFC]"><td className="py-3 font-mono text-xs font-semibold">{s.sale_number}</td><td>{formatDate(s.sale_date)}</td><td>{customers.find(c=>c.id===s.customer_id)?.name||"—"}</td><td>{sellers.find(x=>x.id===s.user_id)?.full_name||"—"}</td><td>{s.payment_method}</td><td><span className="px-2 py-1 rounded-full bg-slate-100 text-xs capitalize">{s.status}</span></td><td className="text-right font-semibold">Bs {money(s.total)}</td><td className="text-right">Bs {money(s.balance)}</td><td><div className="flex justify-end gap-2"><button title="Ver" onClick={()=>viewSale(s)} className="p-2 rounded-lg border"><Eye size={15}/></button><button title="Imprimir" onClick={()=>viewSale(s,true)} className="p-2 rounded-lg border"><Printer size={15}/></button>{s.status!=="anulada" && <button title={Number(s.amount_paid||0)>0 ? "Tiene pagos registrados; regulariza la cobranza antes de eliminar" : "Eliminar venta y devolver stock"} disabled={Number(s.amount_paid||0)>0} onClick={()=>deleteSale(s)} className="p-2 rounded-lg border text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={15}/></button>}</div></td></tr>)}
+          <tbody>{filteredSales.map(s=><tr key={s.id} className="border-b hover:bg-[#FAFBFC]"><td className="py-3 font-mono text-xs font-semibold">{s.sale_number}</td><td>{formatDate(s.sale_date)}</td><td>{customers.find(c=>c.id===s.customer_id)?.name||"—"}</td><td>{sellers.find(x=>x.id===s.user_id)?.full_name||"—"}</td><td>{s.payment_method}</td><td><span className="px-2 py-1 rounded-full bg-slate-100 text-xs capitalize">{s.status}</span></td><td className="text-right font-semibold">Bs {money(s.total)}</td><td className="text-right">Bs {money(s.balance)}</td><td><div className="flex justify-end gap-2"><button title="Ver" onClick={()=>viewSale(s)} className="p-2 rounded-lg border"><Eye size={15}/></button><button title="Imprimir" onClick={()=>viewSale(s,true)} className="p-2 rounded-lg border"><Printer size={15}/></button>{s.status!=="anulada" && <button title={Number(s.amount_paid||0)>0 ? "Tiene pagos registrados; regulariza la cobranza antes de eliminar" : (s.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock")} disabled={Number(s.amount_paid||0)>0} onClick={()=>deleteSale(s)} className="p-2 rounded-lg border text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={15}/></button>}</div></td></tr>)}
           {filteredSales.length===0 && <tr><td colSpan={9} className="py-10 text-center italic text-[#5B6670]">No se encontraron ventas.</td></tr>}</tbody></table></div>
       </div>}
 
@@ -539,7 +547,7 @@ export function Ventas() {
           </div>}
         </div>}
 
-        <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={()=>deleteSale(saved)} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700"><Trash2 size={16} className="inline mr-2"/>Eliminar venta y devolver stock</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
+        <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={()=>deleteSale(saved)} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700"><Trash2 size={16} className="inline mr-2"/>{saved.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock"}</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
       </div>}
 
       {screen==="delivery" && viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">

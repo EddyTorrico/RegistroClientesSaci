@@ -34,6 +34,7 @@ export function Cobranza() {
   const [paymentToDelete, setPaymentToDelete] = useState<any>(null);
   const [deleteReason, setDeleteReason] = useState("");
   const [deletingPayment, setDeletingPayment] = useState(false);
+  const [paymentSearch, setPaymentSearch] = useState("");
 
   const [statDetail, setStatDetail] = useState<"acumuladas" | "cobrado" | "saldo" | "vencida" | null>(null);
 
@@ -75,6 +76,21 @@ export function Cobranza() {
     const name = customers.find(c => c.id === s.customer_id)?.name || "";
     return ok && `${s.sale_number} ${name}`.toLowerCase().includes(search.toLowerCase());
   }), [sales, customers, search, filter]);
+
+  // "Últimos pagos" solo mostraba los 10 más recientes, sin forma de buscar
+  // uno en particular — un pago de una venta vieja podía quedar fuera de
+  // esos 10 y parecer que no existía. Con texto en el buscador se filtra
+  // por venta/cliente y se muestran todas las coincidencias; sin texto, se
+  // muestran los 20 más recientes (antes 10).
+  const filteredPayments = useMemo(() => {
+    const term = paymentSearch.trim().toLowerCase();
+    if (!term) return payments.slice(0, 20);
+    return payments.filter(p => {
+      const s = sales.find(x => x.id === p.sale_id);
+      const name = s ? (customers.find(c => c.id === s.customer_id)?.name || "") : "";
+      return `${s?.sale_number || ""} ${name}`.toLowerCase().includes(term);
+    });
+  }, [payments, sales, customers, paymentSearch]);
 
   const active = sales.filter(s => s.status !== "anulada");
   const total = active.reduce((a, s) => a + Number(s.total || 0), 0);
@@ -217,7 +233,16 @@ export function Cobranza() {
       </div>
     </div>
 
-    <div className="bg-white rounded-2xl p-5"><h3 className="font-semibold mb-3">Últimos pagos</h3>{payments.slice(0, 10).map(p => <div key={p.id} className="flex justify-between items-center border-b py-2 text-sm"><span>{sales.find(s => s.id === p.sale_id)?.sale_number || "Venta"} · {dateBO(p.payment_date)} · {p.payment_method}{p.reference ? ` · ${p.reference}` : ""}</span><div className="flex items-center gap-3"><b>Bs {money.format(Number(p.amount))}</b><button title="Eliminar pago" onClick={() => { setPaymentToDelete(p); setDeleteReason(""); }} className="p-1.5 rounded-lg border text-red-600"><Trash2 size={13} /></button></div></div>)}{payments.length === 0 && <div className="text-sm text-slate-500">Aún no hay pagos parciales registrados.</div>}</div>
+    <div className="bg-white rounded-2xl p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h3 className="font-semibold">Últimos pagos</h3>
+        <div className="relative w-full sm:w-64"><Search size={14} className="absolute left-3 top-2.5 text-slate-400" /><input value={paymentSearch} onChange={e => setPaymentSearch(e.target.value)} placeholder="Buscar por venta o cliente..." className="w-full border rounded-lg pl-8 pr-3 py-2 text-sm" /></div>
+      </div>
+      {!paymentSearch.trim() && payments.length > 20 && <div className="text-xs text-slate-500 mb-2">Mostrando los 20 pagos más recientes — usa el buscador para encontrar el de una venta específica.</div>}
+      {filteredPayments.map(p => <div key={p.id} className="flex justify-between items-center border-b py-2 text-sm"><span>{sales.find(s => s.id === p.sale_id)?.sale_number || "Venta"} · {dateBO(p.payment_date)} · {p.payment_method}{p.reference ? ` · ${p.reference}` : ""}</span><div className="flex items-center gap-3"><b>Bs {money.format(Number(p.amount))}</b><button title="Eliminar pago" onClick={() => { setPaymentToDelete(p); setDeleteReason(""); }} className="p-1.5 rounded-lg border text-red-600"><Trash2 size={13} /></button></div></div>)}
+      {payments.length === 0 && <div className="text-sm text-slate-500">Aún no hay pagos parciales registrados.</div>}
+      {payments.length > 0 && filteredPayments.length === 0 && <div className="text-sm text-slate-500">Ningún pago coincide con "{paymentSearch}".</div>}
+    </div>
 
     {selected && <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-lg max-h-[90vh] overflow-auto">
