@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { AlertTriangle, CalendarClock, CheckCircle2, CircleDollarSign, Search, WalletCards, X, MessageCircle } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, CircleDollarSign, Search, WalletCards, X, MessageCircle, Trash2 } from "lucide-react";
 
 const money = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().slice(0, 10);
@@ -30,6 +30,10 @@ export function Cobranza() {
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const [paymentToDelete, setPaymentToDelete] = useState<any>(null);
+  const [deleteReason, setDeleteReason] = useState("");
+  const [deletingPayment, setDeletingPayment] = useState(false);
 
   const [statDetail, setStatDetail] = useState<"acumuladas" | "cobrado" | "saldo" | "vencida" | null>(null);
 
@@ -98,6 +102,14 @@ export function Cobranza() {
     const { error: e } = await supabase.rpc("register_sale_payment", { p_sale_id: selected.id, p_amount: Number(amount), p_payment_date: today(), p_payment_method: method, p_reference: reference || null, p_notes: notes || null });
     if (e) setError(e.message); else { setSelected(null); setAmount(""); setReference(""); setNotes(""); await load(); }
     setLoading(false);
+  }
+
+  async function removePayment() {
+    if (!paymentToDelete) return;
+    setDeletingPayment(true); setError("");
+    const { error: e } = await supabase.rpc("delete_sale_payment", { p_payment_id: paymentToDelete.id, p_reason: deleteReason.trim() || null });
+    if (e) setError(e.message); else { setPaymentToDelete(null); setDeleteReason(""); await load(); }
+    setDeletingPayment(false);
   }
 
   function openGestion(s: any) {
@@ -205,7 +217,7 @@ export function Cobranza() {
       </div>
     </div>
 
-    <div className="bg-white rounded-2xl p-5"><h3 className="font-semibold mb-3">Últimos pagos</h3>{payments.slice(0, 10).map(p => <div key={p.id} className="flex justify-between border-b py-2 text-sm"><span>{sales.find(s => s.id === p.sale_id)?.sale_number || "Venta"} · {dateBO(p.payment_date)} · {p.payment_method}{p.reference ? ` · ${p.reference}` : ""}</span><b>Bs {money.format(Number(p.amount))}</b></div>)}{payments.length === 0 && <div className="text-sm text-slate-500">Aún no hay pagos parciales registrados.</div>}</div>
+    <div className="bg-white rounded-2xl p-5"><h3 className="font-semibold mb-3">Últimos pagos</h3>{payments.slice(0, 10).map(p => <div key={p.id} className="flex justify-between items-center border-b py-2 text-sm"><span>{sales.find(s => s.id === p.sale_id)?.sale_number || "Venta"} · {dateBO(p.payment_date)} · {p.payment_method}{p.reference ? ` · ${p.reference}` : ""}</span><div className="flex items-center gap-3"><b>Bs {money.format(Number(p.amount))}</b><button title="Eliminar pago" onClick={() => { setPaymentToDelete(p); setDeleteReason(""); }} className="p-1.5 rounded-lg border text-red-600"><Trash2 size={13} /></button></div></div>)}{payments.length === 0 && <div className="text-sm text-slate-500">Aún no hay pagos parciales registrados.</div>}</div>
 
     {selected && <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-lg max-h-[90vh] overflow-auto">
@@ -216,6 +228,20 @@ export function Cobranza() {
           <label className="text-sm">Referencia<input value={reference} onChange={e => setReference(e.target.value)} className="block w-full border rounded-xl p-2.5 mt-1" placeholder="Nro. transferencia, recibo, etc." /></label>
           <label className="text-sm">Observaciones<textarea value={notes} onChange={e => setNotes(e.target.value)} className="block w-full border rounded-xl p-2.5 mt-1" /></label>
           <button disabled={loading || Number(amount) <= 0 || Number(amount) > Number(selected.balance)} onClick={pay} className="py-2.5 rounded-xl bg-[#1B3A6B] text-white disabled:opacity-50">{loading ? "Registrando..." : "Confirmar pago"}</button>
+        </div>
+      </div>
+    </div>}
+
+    {paymentToDelete && <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-lg max-h-[90vh] overflow-auto">
+        <div className="flex justify-between mb-4"><div><h3 className="font-semibold">Eliminar pago</h3><p className="text-xs text-slate-500">{sales.find(s => s.id === paymentToDelete.sale_id)?.sale_number || "Venta"} · Bs {money.format(Number(paymentToDelete.amount))} · {dateBO(paymentToDelete.payment_date)}</p></div><button onClick={() => setPaymentToDelete(null)}><X size={18} /></button></div>
+        <div className="grid gap-3">
+          <p className="text-sm text-slate-600">Esta acción no se puede deshacer. El saldo pendiente de la venta volverá a aumentar en este monto y, si la venta estaba marcada como "pagada", volverá al estado que le corresponda.</p>
+          <label className="text-sm">Motivo (opcional)<textarea value={deleteReason} onChange={e => setDeleteReason(e.target.value)} placeholder="Ej.: monto cargado por error, pago duplicado, etc." className="block w-full border rounded-xl p-2.5 mt-1" /></label>
+          <div className="flex gap-2 justify-end">
+            <button onClick={() => setPaymentToDelete(null)} className="px-4 py-2.5 rounded-xl border text-sm">Cancelar</button>
+            <button disabled={deletingPayment} onClick={removePayment} className="px-4 py-2.5 rounded-xl bg-red-600 text-white text-sm disabled:opacity-50">{deletingPayment ? "Eliminando..." : "Eliminar pago"}</button>
+          </div>
         </div>
       </div>
     </div>}
