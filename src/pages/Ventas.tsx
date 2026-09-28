@@ -217,11 +217,18 @@ export function Ventas() {
     setLoading(true);
     let saleId:string|undefined;
     try {
+      // El pago inicial (paid) NO se guarda directo aquí: se registra después
+      // con register_sale_payment, la misma función que usa Cobranza para
+      // cualquier pago. Así todo pago (inicial o posterior) queda como una
+      // fila en sale_payments, visible y con opción de eliminarse desde
+      // Cobranza — antes, el pago inicial quedaba solo en sales.amount_paid,
+      // sin rastro en el historial de pagos, y no se podía corregir ni
+      // eliminar si se cargaba mal.
       const {data:s,error:se} = await supabase.from("sales").insert({
         customer_id:customerId, user_id:sellerId, quotation_id:quotationId || null,
         customer_address:selectedCustomer?.address?.trim() || null, payment_method:paymentMethod, delivery_time:deliveryTime || null,
         purchase_order_number: purchaseOrderNumber.trim() || null, subject: subject.trim() || null,
-        subtotal, discount:Number(discount||0), total, amount_paid:paid, balance, due_date:paymentMethod==="Crédito" && balance>0 ? dueDate : null,
+        subtotal, discount:Number(discount||0), total, amount_paid:0, balance:total, due_date:paymentMethod==="Crédito" && balance>0 ? dueDate : null,
         due_date_override: paymentMethod==="Crédito" && balance>0 ? dueDateOverride : false,
         observations:observations.trim() || null, status:"borrador",
       }).select().single();
@@ -235,7 +242,21 @@ export function Ventas() {
       if (ie) throw ie;
       const {data:confirmed,error:ce} = await supabase.from("sales").update({status:"confirmada"}).eq("id",s.id).select().single();
       if (ce) throw ce;
-      setSaved(confirmed); setScreen("view"); await loadAll();
+      let finalSale = confirmed;
+      if (paid > 0) {
+        const {data:paidSale,error:pe} = await supabase.rpc("register_sale_payment", {
+          p_sale_id: s.id, p_amount: paid, p_payment_date: confirmed.sale_date,
+          p_payment_method: paymentMethod === "Contado" ? "Contado" : "Otro",
+          p_reference: null, p_notes: "Pago inicial registrado al crear la venta.",
+        });
+        if (pe) {
+          setError("La venta " + confirmed.sale_number + " se confirmó y el stock ya se descontó, pero el pago inicial de Bs " + paid.toFixed(2) + " no se pudo registrar (" + pe.message + "). Regístralo manualmente en Cobranza.");
+          setSaved(confirmed); setScreen("view"); await loadAll();
+          return;
+        }
+        finalSale = paidSale;
+      }
+      setSaved(finalSale); setScreen("view"); await loadAll();
     } catch(e:any) {
       setError((e.message || "No fue posible registrar la venta.") + (saleId ? " La venta quedó como borrador; no se descontó inventario." : ""));
     } finally { setLoading(false); }
