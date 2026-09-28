@@ -425,17 +425,17 @@ export function Productos() {
 
         <div className="bg-white rounded-2xl p-5 overflow-x-auto" style={{ boxShadow: "0 1px 2px rgba(15,38,71,0.06), 0 1px 12px rgba(15,38,71,0.04)" }}>
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Imagen</th><th>Código</th><th>Nombre / Descripción / Especificaciones</th><th>Marca</th><th>Categoría</th><th className="text-right">Precio venta</th><th className="text-right">Stock</th>{canEdit && <th>Acciones</th>}</tr></thead>
+            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2 pr-3">Imagen</th><th className="pr-4">Código</th><th className="pr-4">Nombre / Descripción / Especificaciones</th><th className="pr-4">Marca</th><th className="pr-4">Categoría</th><th className="text-right pr-4">Precio venta</th><th className="text-right pr-4">Stock</th>{canEdit && <th className="pl-2">Acciones</th>}</tr></thead>
             <tbody>
               {rows.map(p => <tr key={p.product_id} className="border-b hover:bg-[#FAFBFC]">
-                <td className="py-2.5">{p.image_url ? <img src={p.image_url} alt={p.name} className="w-11 h-11 object-contain rounded-lg border bg-white"/> : <div className="w-11 h-11 rounded-lg border flex items-center justify-center text-[#9AA4AF]"><ImagePlus size={17}/></div>}</td>
-                <td className="font-mono text-xs">{p.sku}</td>
-                <td className="font-medium text-[#0F2647]">{p.name}{p.is_project_product && <span className="ml-2 align-middle text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Pendiente de compra</span>}</td>
-                <td>{p.brand || "—"}</td>
-                <td>{categoryPath(p.category_id)}</td>
-                <td className="text-right whitespace-nowrap">Bs {money(p.sale_price)}</td>
-                <td className="text-right"><span className={`font-semibold ${Number(p.stock) <= 0 ? "text-red-600" : Number(p.stock) <= 5 ? "text-amber-600" : "text-[#3E7A56]"}`}>{fmt(p.stock)} {p.unit || ""}</span></td>
-                {canEdit && <td><div className="flex gap-3">
+                <td className="py-2.5 pr-3">{p.image_url ? <img src={p.image_url} alt={p.name} className="w-11 h-11 object-contain rounded-lg border bg-white"/> : <div className="w-11 h-11 rounded-lg border flex items-center justify-center text-[#9AA4AF]"><ImagePlus size={17}/></div>}</td>
+                <td className="font-mono text-xs pr-4">{p.sku}</td>
+                <td className="font-medium text-[#0F2647] pr-4 min-w-56">{p.name}{p.is_project_product && <span className="ml-2 align-middle text-[10px] font-normal text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">Pendiente de compra</span>}</td>
+                <td className="pr-4 whitespace-nowrap">{p.brand || "—"}</td>
+                <td className="pr-4 whitespace-nowrap">{categoryPath(p.category_id)}</td>
+                <td className="text-right whitespace-nowrap pr-4">Bs {money(p.sale_price)}</td>
+                <td className="text-right pr-4 whitespace-nowrap"><span className={`font-semibold ${Number(p.stock) <= 0 ? "text-red-600" : Number(p.stock) <= 5 ? "text-amber-600" : "text-[#3E7A56]"}`}>{fmt(p.stock)} {p.unit || ""}</span></td>
+                {canEdit && <td className="pl-2"><div className="flex gap-3">
                   <button title="Editar producto" onClick={() => editProduct(p)} className="text-[#1B3A6B]"><Pencil size={16}/></button>
                   <button title="Movimiento de stock" onClick={() => { setMov({ ...emptyMov, product_id: p.product_id }); setMovementOpen(true); }} className="text-[#1B3A6B]"><PackagePlus size={16}/></button>
                   <button title="Historial" onClick={() => showHistory(p)} className="text-[#5B6670]"><History size={16}/></button>

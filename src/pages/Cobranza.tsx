@@ -31,6 +31,8 @@ export function Cobranza() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const [statDetail, setStatDetail] = useState<"acumuladas" | "cobrado" | "saldo" | "vencida" | null>(null);
+
   const [gestionSale, setGestionSale] = useState<any>(null);
   const [gestionType, setGestionType] = useState(PROMESA);
   const [gestionDate, setGestionDate] = useState("");
@@ -74,7 +76,17 @@ export function Cobranza() {
   const total = active.reduce((a, s) => a + Number(s.total || 0), 0);
   const collected = active.reduce((a, s) => a + Number(s.amount_paid || 0), 0);
   const balance = active.reduce((a, s) => a + Number(s.balance || 0), 0);
-  const overdue = active.filter(s => status(s) === "vencida").reduce((a, s) => a + Number(s.balance || 0), 0);
+  const overdueList = active.filter(s => status(s) === "vencida");
+  const overdue = overdueList.reduce((a, s) => a + Number(s.balance || 0), 0);
+  const collectedList = active.filter(s => Number(s.amount_paid || 0) > 0);
+  const balanceList = active.filter(s => Number(s.balance || 0) > 0);
+
+  const statDetailConfig: Record<string, { title: string; rows: any[]; amountLabel: string; amountOf: (s: any) => number; total: number }> = {
+    acumuladas: { title: "Ventas acumuladas", rows: active, amountLabel: "Total", amountOf: (s: any) => Number(s.total || 0), total },
+    cobrado: { title: "Cobrado", rows: collectedList, amountLabel: "Cobrado", amountOf: (s: any) => Number(s.amount_paid || 0), total: collected },
+    saldo: { title: "Saldo por cobrar", rows: balanceList, amountLabel: "Saldo", amountOf: (s: any) => Number(s.balance || 0), total: balance },
+    vencida: { title: "Cartera vencida", rows: overdueList, amountLabel: "Saldo vencido", amountOf: (s: any) => Number(s.balance || 0), total: overdue },
+  };
 
   function nextOpen(saleId: string, type: string) {
     return followUps.filter(f => f.sale_id === saleId && f.type === type && !f.completed).sort((a, b) => String(a.scheduled_date).localeCompare(String(b.scheduled_date)))[0];
@@ -125,10 +137,10 @@ export function Cobranza() {
   return <Layout title="Cobranza" subtitle="Cuentas por cobrar, vencimientos y pagos de ventas"><div className="space-y-5">
     {error && <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{error}</div>}
     <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
-      <Stat icon={CircleDollarSign} label="Ventas acumuladas" value={`Bs ${money.format(total)}`} />
-      <Stat icon={CheckCircle2} label="Cobrado" value={`Bs ${money.format(collected)}`} />
-      <Stat icon={WalletCards} label="Saldo por cobrar" value={`Bs ${money.format(balance)}`} />
-      <Stat icon={AlertTriangle} label="Cartera vencida" value={`Bs ${money.format(overdue)}`} />
+      <Stat icon={CircleDollarSign} label="Ventas acumuladas" value={`Bs ${money.format(total)}`} onClick={() => setStatDetail("acumuladas")} />
+      <Stat icon={CheckCircle2} label="Cobrado" value={`Bs ${money.format(collected)}`} onClick={() => setStatDetail("cobrado")} />
+      <Stat icon={WalletCards} label="Saldo por cobrar" value={`Bs ${money.format(balance)}`} onClick={() => setStatDetail("saldo")} />
+      <Stat icon={AlertTriangle} label="Cartera vencida" value={`Bs ${money.format(overdue)}`} onClick={() => setStatDetail("vencida")} />
     </div>
 
     <div className="bg-white rounded-2xl p-5">
@@ -208,6 +220,27 @@ export function Cobranza() {
       </div>
     </div>}
 
+    {statDetail && <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-2xl max-h-[90vh] overflow-auto">
+        <div className="flex justify-between mb-4"><div><h3 className="font-semibold">{statDetailConfig[statDetail].title}</h3><p className="text-xs text-slate-500">{statDetailConfig[statDetail].rows.length} venta(s) · Bs {money.format(statDetailConfig[statDetail].total)}</p></div><button onClick={() => setStatDetail(null)}><X size={18} /></button></div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left border-b text-slate-500"><th className="py-2">Venta</th><th>Cliente</th><th>Fecha</th><th className="text-right">{statDetailConfig[statDetail].amountLabel}</th></tr></thead>
+            <tbody>
+              {statDetailConfig[statDetail].rows.map(s => <tr key={s.id} className="border-b">
+                <td className="py-2 font-mono text-xs">{s.sale_number}</td>
+                <td>{customers.find(c => c.id === s.customer_id)?.name || "—"}</td>
+                <td>{dateBO(s.sale_date)}</td>
+                <td className="text-right font-semibold">Bs {money.format(statDetailConfig[statDetail].amountOf(s))}</td>
+              </tr>)}
+              {statDetailConfig[statDetail].rows.length === 0 && <tr><td colSpan={4} className="py-8 text-center italic text-slate-500">Sin ventas en esta categoría.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+        <div className="mt-4 flex justify-end"><button onClick={() => setStatDetail(null)} className="px-4 py-2 rounded-xl border text-sm">Cerrar</button></div>
+      </div>
+    </div>}
+
     {gestionSale && <div className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
       <div className="bg-white rounded-t-2xl sm:rounded-2xl p-5 w-full sm:max-w-lg max-h-[90vh] overflow-auto">
         <div className="flex justify-between mb-4"><div><h3 className="font-semibold">Registrar gestión de cobranza</h3><p className="text-xs text-slate-500">{gestionSale.sale_number}</p></div><button onClick={() => setGestionSale(null)}><X size={18} /></button></div>
@@ -222,6 +255,7 @@ export function Cobranza() {
   </div></Layout>;
 }
 
-function Stat({ icon: Icon, label, value }: { icon: any, label: string, value: string }) {
-  return <div className="bg-white rounded-2xl p-4 flex items-center gap-3"><div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0"><Icon size={18} /></div><div className="min-w-0"><div className="text-lg font-semibold text-[#0F2647] truncate">{value}</div><div className="text-xs text-slate-500">{label}</div></div></div>;
+function Stat({ icon: Icon, label, value, onClick }: { icon: any, label: string, value: string, onClick?: () => void }) {
+  const Comp: any = onClick ? "button" : "div";
+  return <Comp onClick={onClick} className={`bg-white rounded-2xl p-4 flex items-center gap-3 text-left w-full ${onClick ? "hover:bg-[#FAFBFC] cursor-pointer" : ""}`}><div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center shrink-0"><Icon size={18} /></div><div className="min-w-0"><div className="text-lg font-semibold text-[#0F2647] truncate">{value}</div><div className="text-xs text-slate-500">{label}</div></div></Comp>;
 }

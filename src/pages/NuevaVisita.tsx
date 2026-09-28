@@ -26,7 +26,7 @@ export function NuevaVisita() {
   const [error, setError] = useState("");
   const [form, setForm] = useState({
     nombre: "", tipos: [] as string[], contactoNombre: "", contactoCargo: "", telefono: "", whatsapp: "", email: "", decisor: "sí",
-    direccion: "", zona: "", ciudad: "Santa Cruz de la Sierra", productos: [] as any[], proveedor: "", razones: [] as string[],
+    direccion: "", direccionReferencia: "", zona: "", ciudad: "Santa Cruz de la Sierra", productos: [] as any[], proveedor: "", razones: [] as string[],
     oportunidad: false, necesidad: "", monto: "", interes: "Medio" as "Bajo" | "Medio" | "Alto", resultados: [] as string[],
     accion: "Llamar", fecha: "", nota: ""
   });
@@ -34,7 +34,7 @@ export function NuevaVisita() {
   useEffect(() => {
     supabase
       .from("customers")
-      .select("id,name,business_types,zone,city,address,phone,latitude,longitude,customer_contacts(id,name,position,phone,whatsapp,email,is_decision_maker,created_at)")
+      .select("id,name,business_types,zone,city,address,address_reference,phone,latitude,longitude,customer_contacts(id,name,position,phone,whatsapp,email,is_decision_maker,created_at)")
       .order("name")
       .then(({ data, error }) => {
         if (error) setError(error.message);
@@ -65,6 +65,7 @@ export function NuevaVisita() {
       zona: c.zone || "",
       ciudad: c.city || "Santa Cruz de la Sierra",
       direccion: c.address || "",
+      direccionReferencia: c.address_reference || "",
       telefono: primary?.phone || c.phone || "",
       contactoNombre: primary?.name || "",
       contactoCargo: primary?.position || "",
@@ -86,14 +87,16 @@ export function NuevaVisita() {
       let cid = clienteId;
       if (modo === "nuevo") {
         const { data, error: e } = await supabase.from("customers").insert({
-          name: form.nombre, business_types: form.tipos, zone: form.zona, city: form.ciudad, address: form.direccion, phone: form.telefono,
+          name: form.nombre, business_types: form.tipos, zone: form.zona, city: form.ciudad, address: form.direccion,
+          address_reference: form.direccionReferencia.trim() || null, phone: form.telefono,
           latitude: coords?.lat ?? null, longitude: coords?.lng ?? null, created_by: profile.id
         }).select().single();
         if (e) throw e;
         cid = data.id;
       } else {
         const { error: e } = await supabase.from("customers").update({
-          business_types: form.tipos, address: form.direccion, phone: form.telefono, zone: form.zona, city: form.ciudad,
+          business_types: form.tipos, address: form.direccion, address_reference: form.direccionReferencia.trim() || null,
+          phone: form.telefono, zone: form.zona, city: form.ciudad,
           latitude: coords?.lat ?? undefined, longitude: coords?.lng ?? undefined
         }).eq("id", cid);
         if (e) throw e;
@@ -145,7 +148,7 @@ export function NuevaVisita() {
 
       const { error: e } = await supabase.from("visits").insert({
         customer_id: cid, user_id: profile.id, latitude: coords?.lat ?? null, longitude: coords?.lng ?? null,
-        address: form.direccion, zone: form.zona, photo_url: photoUrl, provider_name: form.proveedor, provider_reasons: form.razones,
+        address: form.direccion, address_reference: form.direccionReferencia.trim() || null, zone: form.zona, photo_url: photoUrl, provider_name: form.proveedor, provider_reasons: form.razones,
         need_description: form.necesidad, estimated_amount: form.monto ? Number(form.monto) : null, interest_level: form.interes,
         result: form.resultados.join("; "), result_options: form.resultados, opportunity_detected: form.oportunidad, opportunity_id: opportunityId,
         next_action_type: form.oportunidad && form.fecha ? form.accion : null,
@@ -213,6 +216,7 @@ export function NuevaVisita() {
           <input placeholder="Dirección" value={form.direccion} onChange={e => patch({ direccion: e.target.value })} className={input}/>
           <input placeholder="Zona" value={form.zona} onChange={e => patch({ zona: e.target.value })} className={input}/>
           <input placeholder="Ciudad" value={form.ciudad} onChange={e => patch({ ciudad: e.target.value })} className={`${input} col-span-2`}/>
+          <textarea placeholder="Detalle adicional de la dirección (punto de referencia, piso, nro., color de casa, etc.)" rows={2} value={form.direccionReferencia} onChange={e => patch({ direccionReferencia: e.target.value })} className={`${input} col-span-2`}/>
         </div>
         {fotoPreview ? <div className="border rounded-xl p-3 space-y-2">
           <div className="flex items-center gap-3">
