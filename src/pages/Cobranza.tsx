@@ -58,7 +58,15 @@ export function Cobranza() {
 
   async function load() {
     setError("");
-    let sq = supabase.from("sales").select("id,sale_number,customer_id,user_id,sale_date,payment_method,status,total,amount_paid,balance,due_date,observations").neq("status", "borrador").order("due_date", { ascending: true });
+    // Antes esta consulta excluía los Borrador directamente (correcto para
+    // la tabla de cobranza: un borrador no es una cuenta por cobrar real).
+    // Pero como "sales" es también la lista que usa "Últimos pagos" para
+    // reconocer el número de venta y el cliente de cada pago, excluir los
+    // borradores aquí hacía que el pago de una venta en Borrador quedara
+    // "huérfano" — no se podía ni ver ni buscar en Cobranza, aunque el pago
+    // sí existiera. Ahora se traen todos los estados, y el borrador se
+    // sigue excluyendo de la tabla principal más abajo (en "rows").
+    let sq = supabase.from("sales").select("id,sale_number,customer_id,user_id,sale_date,payment_method,status,total,amount_paid,balance,due_date,observations").order("due_date", { ascending: true });
     if (profile?.role === "vendedor") sq = sq.eq("user_id", profile.id);
     const [s, c, p, f] = await Promise.all([
       sq,
@@ -71,6 +79,7 @@ export function Cobranza() {
   }
 
   const rows = useMemo(() => sales.filter(s => {
+    if (s.status === "borrador") return false; // un borrador no es una cuenta por cobrar real todavía.
     const st = status(s);
     const ok = filter === "todos" || (filter === "pendientes" ? Number(s.balance) > 0 : st === filter);
     const name = customers.find(c => c.id === s.customer_id)?.name || "";
@@ -92,7 +101,7 @@ export function Cobranza() {
     });
   }, [payments, sales, customers, paymentSearch]);
 
-  const active = sales.filter(s => s.status !== "anulada");
+  const active = sales.filter(s => s.status !== "anulada" && s.status !== "borrador");
   const total = active.reduce((a, s) => a + Number(s.total || 0), 0);
   const collected = active.reduce((a, s) => a + Number(s.amount_paid || 0), 0);
   const balance = active.reduce((a, s) => a + Number(s.balance || 0), 0);
