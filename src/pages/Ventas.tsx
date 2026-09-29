@@ -25,7 +25,12 @@ function formatDate(value?: string | null) {
 function isoToday() { return new Date().toISOString().slice(0,10); }
 
 export function Ventas() {
-  const { profile } = useAuth();
+  const { profile, user } = useAuth();
+  // Corrección de una venta ya guardada (Fase 25): solo Eddy Torrico la ve
+  // y puede usarla — la restricción real está en el servidor (correct_sale
+  // la rechaza para cualquier otro usuario aunque sea admin), esto solo
+  // evita mostrarle el botón a quien no puede usarlo.
+  const canCorrect = (user?.email || "").trim().toLowerCase() === "eddy.torrico@sacipetrol.com";
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const [screen, setScreen] = useState<"list"|"new"|"view"|"report"|"delivery">("list");
@@ -57,12 +62,13 @@ export function Ventas() {
   const [reportDate, setReportDate] = useState(isoToday());
   const [reportSellerId, setReportSellerId] = useState("");
 
-  // Edición de vencimiento sobre una venta ya guardada (permite corregir
-  // casos como VEN-2026-00004: vencimiento anterior a la fecha de emisión).
-  const [editingDueDate, setEditingDueDate] = useState(false);
-  const [dueDateDraft, setDueDateDraft] = useState("");
-  const [dueDateDraftOverride, setDueDateDraftOverride] = useState(false);
-  const [savingDueDate, setSavingDueDate] = useState(false);
+  // Corrección de una venta ya guardada (Fase 25) — reutiliza la pantalla
+  // "new" como formulario de edición cuando correctingSaleId está definido.
+  const [correctingSaleId, setCorrectingSaleId] = useState<string | null>(null);
+  const [correctingSaleNumber, setCorrectingSaleNumber] = useState("");
+  const [saleDateDraft, setSaleDateDraft] = useState(isoToday());
+  const [correctReason, setCorrectReason] = useState("");
+  const [correcting, setCorrecting] = useState(false);
 
   // Notas de entrega de la venta abierta en "view".
   const [deliveryStatus, setDeliveryStatus] = useState<any[]>([]);
@@ -120,6 +126,7 @@ export function Ventas() {
     setSaved(null); setItems([]); setCustomerId(""); setSellerId(profile?.id ?? ""); setQuotationId("");
     setPaymentMethod("Contado"); setDeliveryTime("Inmediata"); setPurchaseOrderNumber(""); setSubject(""); setDiscount("0"); setAmountPaid("0"); setDueDate(""); setDueDateOverride(false);
     setObservations(""); setProductSearch(""); setError(""); setScreen("new");
+    setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectReason(""); setSaleDateDraft(isoToday());
     if (params.get("quotation")) setParams({});
   }
 
@@ -269,7 +276,7 @@ export function Ventas() {
       setSaved(s); setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "—");
       setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount||0)); setAmountPaid(String(s.amount_paid||0)); setDueDate(s.due_date||""); setObservations(s.observations||""); setItems((data??[]).map((i:any)=>({...i,stock:0})));
-      setEditingDueDate(false); setShowDeliveryForm(false);
+      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setShowDeliveryForm(false);
       await loadDeliveryData(s.id);
       setScreen("view"); if(printAfter) setTimeout(()=>window.print(),120);
     } catch(e:any){ setError(e.message || "No fue posible abrir la venta."); } finally { setLoading(false); }
@@ -284,26 +291,82 @@ export function Ventas() {
     setDeliveryNotesList(notesRes.data ?? []);
   }
 
-  function startEditDueDate() {
-    setDueDateDraft(saved?.due_date || "");
-    setDueDateDraftOverride(false);
-    setEditingDueDate(true);
+  // Abre la venta ya guardada en modo corrección (solo Eddy Torrico ve el
+  // botón que llama a esto — ver canCorrect más arriba).
+  async function openCorrect(s: any) {
+    setError("");
+    setLoading(true);
+    try {
+      const { data: rows, error: ie } = await supabase.from("sale_items").select("*").eq("sale_id", s.id).order("id");
+      if (ie) throw ie;
+      const productIds = Array.from(new Set((rows ?? []).map((r: any) => r.product_id).filter(Boolean)));
+      let stockByProduct: Record<string, number> = {};
+      if (productIds.length) {
+        const { data: inv } = await supabase.from("product_inventory").select("product_id,stock").in("product_id", productIds as string[]);
+        (inv ?? []).forEach((r: any) => { stockByProduct[r.product_id] = Number(r.stock || 0); });
+      }
+      const mapped = (rows ?? []).map((i: any) => ({
+        ...i,
+        // Al corregir, lo que esta misma venta ya tenía reservado de este
+        // producto se vuelve a sumar como "disponible" para poder subir la
+        // cantidad hasta ese límite combinado (la validación real la hace
+        // el servidor de todas formas).
+        stock: (stockByProduct[i.product_id] ?? 0) + Number(i.quantity || 0),
+      }));
+      setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || "");
+      setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "");
+      setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
+      setDiscount(String(s.discount || 0)); setDueDate(s.due_date || ""); setDueDateOverride(false);
+      setAmountPaid(String(s.amount_paid || 0));
+      setObservations(s.observations || ""); setItems(mapped); setProductSearch("");
+      setSaleDateDraft(String(s.sale_date || "").slice(0, 10) || isoToday());
+      setCorrectReason(""); setCorrectingSaleId(s.id); setCorrectingSaleNumber(s.sale_number);
+      setScreen("new");
+    } catch (e: any) {
+      setError(e.message || "No fue posible abrir la venta para corregir.");
+    } finally { setLoading(false); }
   }
 
-  async function saveDueDateEdit() {
-    if (!saved) return;
-    setSavingDueDate(true); setError("");
+  async function saveCorrection() {
+    setError("");
+    if (!correctingSaleId) return;
+    if (!customerId || !sellerId || !items.length) return setError("Selecciona cliente, vendedor y al menos un producto.");
+    if (paymentMethod === "Crédito" && balance > 0 && !dueDate) return setError("Para una venta a crédito con saldo pendiente debes indicar fecha de vencimiento.");
+    if (paymentMethod === "Crédito" && balance > 0 && dueDate && dueDate < saleDateDraft && !dueDateOverride) return setError("El vencimiento no puede ser anterior a la fecha de la venta. Si es un caso excepcional, marca la confirmación de vencimiento excepcional.");
+    for (const i of items) {
+      if (Number(i.quantity) <= 0) return setError(`La cantidad de ${i.sku} debe ser mayor a cero.`);
+      if (Number(i.quantity) > Number(i.stock)) return setError(`Stock insuficiente para ${i.sku}. Disponible (incluyendo lo que esta venta ya tenía reservado): ${qty(i.stock)}.`);
+    }
+    setCorrecting(true);
     try {
-      const { data, error: e } = await supabase.from("sales").update({
-        due_date: dueDateDraft || null,
-        due_date_override: dueDateDraftOverride,
-      }).eq("id", saved.id).select().single();
+      const { data, error: e } = await supabase.rpc("correct_sale", {
+        p_sale_id: correctingSaleId,
+        p_customer_id: customerId,
+        p_user_id: sellerId,
+        p_sale_date: saleDateDraft,
+        p_payment_method: paymentMethod,
+        p_delivery_time: deliveryTime || null,
+        p_purchase_order_number: purchaseOrderNumber || null,
+        p_subject: subject || null,
+        p_customer_address: selectedCustomer?.address || null,
+        p_discount: Number(discount || 0),
+        p_due_date: paymentMethod === "Crédito" ? (dueDate || null) : null,
+        p_due_date_override: dueDateOverride,
+        p_observations: observations || null,
+        p_reason: correctReason || null,
+        p_items: items.map(i => ({
+          product_id: i.product_id, sku: i.sku, description: i.description, brand: i.brand || null,
+          unit: i.unit || "unidad", quantity: Number(i.quantity), unit_price: Number(i.unit_price),
+          discount: Number(i.discount || 0), client_item_code: i.client_item_code || null, delivery_date: i.delivery_date || null,
+        })),
+      });
       if (e) throw e;
-      setSaved(data); setDueDate(data.due_date || ""); setEditingDueDate(false);
-      await reloadSales();
+      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectReason("");
+      await loadAll();
+      await viewSale(data);
     } catch (e: any) {
-      setError(e.message || "No fue posible actualizar el vencimiento. Si el mensaje menciona que el vencimiento no puede ser anterior a la emisión, marca la confirmación de caso excepcional.");
-    } finally { setSavingDueDate(false); }
+      setError(e.message || "No fue posible guardar la corrección.");
+    } finally { setCorrecting(false); }
   }
 
   function openDeliveryForm() {
@@ -423,15 +486,19 @@ export function Ventas() {
           <div className="relative md:w-80"><Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#5B6670]"/><input value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} placeholder="VEN-2026-... o cliente" className="w-full border rounded-xl py-2.5 pl-9 pr-3 text-sm"/></div>
         </div>
         <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Fecha</th><th>Cliente</th><th>Vendedor</th><th>Pago</th><th>Estado</th><th className="text-right">Total</th><th className="text-right">Saldo</th><th className="text-right">Acciones</th></tr></thead>
-          <tbody>{filteredSales.map(s=><tr key={s.id} className="border-b hover:bg-[#FAFBFC]"><td className="py-3 font-mono text-xs font-semibold">{s.sale_number}</td><td>{formatDate(s.sale_date)}</td><td>{customers.find(c=>c.id===s.customer_id)?.name||"—"}</td><td>{sellers.find(x=>x.id===s.user_id)?.full_name||"—"}</td><td>{s.payment_method}</td><td><span className="px-2 py-1 rounded-full bg-slate-100 text-xs capitalize">{s.status}</span></td><td className="text-right font-semibold">Bs {money(s.total)}</td><td className="text-right">Bs {money(s.balance)}</td><td><div className="flex justify-end gap-2"><button title="Ver" onClick={()=>viewSale(s)} className="p-2 rounded-lg border"><Eye size={15}/></button><button title="Imprimir" onClick={()=>viewSale(s,true)} className="p-2 rounded-lg border"><Printer size={15}/></button>{s.status!=="anulada" && <button title={Number(s.amount_paid||0)>0 ? "Tiene pagos registrados; regulariza la cobranza antes de eliminar" : (s.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock")} disabled={Number(s.amount_paid||0)>0} onClick={()=>deleteSale(s)} className="p-2 rounded-lg border text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={15}/></button>}</div></td></tr>)}
+          <tbody>{filteredSales.map(s=><tr key={s.id} className="border-b hover:bg-[#FAFBFC]"><td className="py-3 font-mono text-xs font-semibold">{s.sale_number}</td><td>{formatDate(s.sale_date)}</td><td>{customers.find(c=>c.id===s.customer_id)?.name||"—"}</td><td>{sellers.find(x=>x.id===s.user_id)?.full_name||"—"}</td><td>{s.payment_method}</td><td><span className="px-2 py-1 rounded-full bg-slate-100 text-xs capitalize">{s.status}</span></td><td className="text-right font-semibold">Bs {money(s.total)}</td><td className="text-right">Bs {money(s.balance)}</td><td><div className="flex justify-end gap-2"><button title="Ver" onClick={()=>viewSale(s)} className="p-2 rounded-lg border"><Eye size={15}/></button><button title="Imprimir" onClick={()=>viewSale(s,true)} className="p-2 rounded-lg border"><Printer size={15}/></button>{canCorrect && s.status!=="anulada" && <button title="Corregir venta" onClick={()=>openCorrect(s)} className="p-2 rounded-lg border text-[#1B3A6B]"><Pencil size={15}/></button>}{s.status!=="anulada" && <button title={Number(s.amount_paid||0)>0 ? "Tiene pagos registrados; regulariza la cobranza antes de eliminar" : (s.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock")} disabled={Number(s.amount_paid||0)>0} onClick={()=>deleteSale(s)} className="p-2 rounded-lg border text-red-600 disabled:opacity-30 disabled:cursor-not-allowed"><Trash2 size={15}/></button>}</div></td></tr>)}
           {filteredSales.length===0 && <tr><td colSpan={9} className="py-10 text-center italic text-[#5B6670]">No se encontraron ventas.</td></tr>}</tbody></table></div>
       </div>}
 
       {screen==="new" && <div className="grid xl:grid-cols-2 gap-5 print:hidden">
         <div className="bg-white rounded-2xl p-5 space-y-4">
+          {correctingSaleId && <div className="rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-900">
+            <div className="font-semibold flex items-center gap-2"><Pencil size={14}/>Corrigiendo la venta {correctingSaleNumber}</div>
+            <div className="text-xs mt-1">Los cambios quedan registrados en las observaciones de la venta, con el motivo que indiques abajo. Si cambias cantidades, el inventario se ajusta automáticamente (nunca se borra el movimiento original, se agrega un ajuste con la diferencia).</div>
+          </div>}
           {quotationId && <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">Venta originada desde cotización <b>{quotations.find(q=>q.id===quotationId)?.quotation_number}</b>.</div>}
           <div className="grid md:grid-cols-2 gap-3">
-            <label className="text-xs text-[#5B6670]">Cliente<select disabled={!!quotationId} value={customerId} onChange={e=>setCustomerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="text-xs text-[#5B6670]">Cliente<select disabled={!!quotationId && !correctingSaleId} value={customerId} onChange={e=>setCustomerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className="text-xs text-[#5B6670]">Vendedor<select value={sellerId} onChange={e=>setSellerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s=><option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
           </div>
           {selectedCustomer && <div className="text-xs bg-slate-50 border rounded-xl p-3"><b>Dirección:</b> {selectedCustomer.address||"Sin dirección registrada"}</div>}
@@ -475,16 +542,22 @@ export function Ventas() {
               </div>}
             </>}
           </div>)}
-          <div className="grid md:grid-cols-2 gap-3 mt-4"><label className="text-xs">Forma de pago<select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2 mt-1"><option>Contado</option><option>Crédito</option></select></label><label className="text-xs">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>
+          <div className="grid md:grid-cols-2 gap-3 mt-4">
+            <label className="text-xs">Forma de pago<select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2 mt-1"><option>Contado</option><option>Crédito</option></select></label>
+            {correctingSaleId ? <label className="text-xs">Fecha de la venta<input type="date" value={saleDateDraft} onChange={e=>setSaleDateDraft(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label> : <label className="text-xs">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
+          </div>
+          {correctingSaleId && <label className="block text-xs mt-3">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
           <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Orden de compra (Nº, para la nota de entrega)<input value={purchaseOrderNumber} onChange={e=>setPurchaseOrderNumber(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Objeto (para la nota de entrega)<input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Ej. ADQUISICION DE EQUIPOS ELECTRICOS" className="w-full border rounded-lg p-2 mt-1"/></label></div>
-          {paymentMethod==="Crédito" && <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Pago inicial (Bs)<input type="number" min="0" max={total} step="0.01" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>}
+          {paymentMethod==="Crédito" && !correctingSaleId && <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Pago inicial (Bs)<input type="number" min="0" max={total} step="0.01" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>}
+          {paymentMethod==="Crédito" && correctingSaleId && <label className="block text-xs mt-3">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
           <label className="block text-xs mt-3">Descuento general (Bs)<input type="number" min="0" step="0.01" value={discount} onChange={e=>setDiscount(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
           <label className="block text-xs mt-3">Observaciones<textarea rows={3} value={observations} onChange={e=>setObservations(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
-          <div className="mt-4 border-t pt-4 text-sm space-y-1"><div className="flex justify-between"><span>Subtotal</span><span>Bs {money(subtotal)}</span></div><div className="flex justify-between"><span>Descuento</span><span>Bs {money(discount)}</span></div><div className="flex justify-between font-semibold text-base"><span>Total</span><span>Bs {money(total)}</span></div><div className="flex justify-between"><span>Pagado</span><span>Bs {money(paid)}</span></div><div className="flex justify-between font-semibold"><span>Saldo</span><span>Bs {money(balance)}</span></div></div>
-          {paymentMethod==="Crédito" && balance>0 && dueDate && dueDate < isoToday() && <label className="flex items-start gap-2 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800"><input type="checkbox" checked={dueDateOverride} onChange={e=>setDueDateOverride(e.target.checked)} className="mt-0.5"/><span>El vencimiento elegido es anterior a hoy. Confirmo que es un caso excepcional y quiero guardarlo así.</span></label>}
+          {correctingSaleId && <label className="block text-xs mt-3">Motivo de la corrección (queda registrado en la venta)<textarea rows={2} value={correctReason} onChange={e=>setCorrectReason(e.target.value)} placeholder="Ej.: se cargó mal la cantidad del producto X, se corrige a pedido del cliente." className="w-full border rounded-lg p-2 mt-1"/></label>}
+          <div className="mt-4 border-t pt-4 text-sm space-y-1"><div className="flex justify-between"><span>Subtotal</span><span>Bs {money(subtotal)}</span></div><div className="flex justify-between"><span>Descuento</span><span>Bs {money(discount)}</span></div><div className="flex justify-between font-semibold text-base"><span>Total</span><span>Bs {money(total)}</span></div><div className="flex justify-between"><span>Pagado</span><span>Bs {money(correctingSaleId ? amountPaid : paid)}</span></div><div className="flex justify-between font-semibold"><span>Saldo</span><span>Bs {money(correctingSaleId ? Math.max(0, total - Number(amountPaid||0)) : balance)}</span></div></div>
+          {paymentMethod==="Crédito" && dueDate && dueDate < (correctingSaleId ? saleDateDraft : isoToday()) && <label className="flex items-start gap-2 mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800"><input type="checkbox" checked={dueDateOverride} onChange={e=>setDueDateOverride(e.target.checked)} className="mt-0.5"/><span>El vencimiento elegido es anterior a la fecha de la venta. Confirmo que es un caso excepcional y quiero guardarlo así.</span></label>}
           {items.some(i=>i.needs_link) && <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 flex items-center gap-2"><AlertTriangle size={14}/>Vincula todos los ítems sin catálogo a un producto real antes de confirmar.</div>}
-          <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800">Al confirmar la venta se descontará automáticamente el stock de cada producto.</div>
-          <button disabled={loading || items.some(i=>i.needs_link)} onClick={saveSale} className="w-full mt-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white disabled:opacity-50">{loading?"Confirmando...":"Confirmar venta"}</button>
+          <div className="mt-3 p-3 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-800">{correctingSaleId ? "Si cambias cantidades, se ajustará automáticamente el inventario según la diferencia con lo ya vendido." : "Al confirmar la venta se descontará automáticamente el stock de cada producto."}</div>
+          <button disabled={(correctingSaleId ? correcting : loading) || items.some(i=>i.needs_link)} onClick={correctingSaleId ? saveCorrection : saveSale} className="w-full mt-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white disabled:opacity-50">{correctingSaleId ? (correcting?"Guardando corrección...":"Guardar corrección") : (loading?"Confirmando...":"Confirmar venta")}</button>
         </div>
       </div>}
 
@@ -498,15 +571,8 @@ export function Ventas() {
           <div><b>Tiempo de entrega:</b> {saved.delivery_time||"—"}</div>
           <div className="flex items-center gap-2">
             <b>Vencimiento:</b> {saved.due_date ? formatDate(saved.due_date) : "—"}{saved.due_date_override && <span className="print:hidden px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px]">excepcional</span>}
-            {saved.payment_method==="Crédito" && !editingDueDate && <button onClick={startEditDueDate} className="print:hidden text-[#1B3A6B] underline text-[11px]"><Pencil size={11} className="inline mr-0.5"/>Editar</button>}
           </div>
-          {editingDueDate && <div className="print:hidden flex flex-wrap items-end gap-2 bg-slate-50 border rounded-xl p-3">
-            <label className="text-[11px]">Nuevo vencimiento<input type="date" value={dueDateDraft} onChange={e=>setDueDateDraft(e.target.value)} className="block border rounded-lg p-2 mt-1"/></label>
-            {dueDateDraft && dueDateDraft < String(saved.sale_date).slice(0,10) && <label className="flex items-center gap-1 text-[11px] text-amber-800"><input type="checkbox" checked={dueDateDraftOverride} onChange={e=>setDueDateDraftOverride(e.target.checked)}/>Es anterior a la emisión, confirmar caso excepcional</label>}
-            <button disabled={savingDueDate} onClick={saveDueDateEdit} className="px-3 py-2 rounded-lg bg-[#1B3A6B] text-white text-xs">{savingDueDate?"Guardando...":"Guardar"}</button>
-            <button onClick={()=>setEditingDueDate(false)} className="px-3 py-2 rounded-lg border text-xs">Cancelar</button>
-          </div>}
-          {saved.observations && <div><b>Observaciones:</b> {saved.observations}</div>}
+          {saved.observations && <div style={{whiteSpace:"pre-line"}}><b>Observaciones:</b> {saved.observations}</div>}
         </div>
 
         {saved.status!=="anulada" && saved.status!=="borrador" && <div className="mt-6 print:hidden border-t pt-4">
@@ -547,7 +613,7 @@ export function Ventas() {
           </div>}
         </div>}
 
-        <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={()=>deleteSale(saved)} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700"><Trash2 size={16} className="inline mr-2"/>{saved.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock"}</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
+        <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">{canCorrect && saved.status!=="anulada" && <button onClick={()=>openCorrect(saved)} className="px-5 py-2.5 rounded-xl border border-[#1B3A6B] text-[#1B3A6B]"><Pencil size={16} className="inline mr-2"/>Corregir venta</button>}{saved.status!=="anulada" && Number(saved.amount_paid||0)===0 && <button disabled={loading} onClick={()=>deleteSale(saved)} className="px-5 py-2.5 rounded-xl border border-red-200 text-red-700"><Trash2 size={16} className="inline mr-2"/>{saved.status==="borrador" ? "Eliminar borrador" : "Eliminar venta y devolver stock"}</button>}<button onClick={()=>setScreen("list")} className="px-5 py-2.5 rounded-xl border">Volver</button><button onClick={()=>window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2"/>Imprimir / PDF</button></div>
       </div>}
 
       {screen==="delivery" && viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
