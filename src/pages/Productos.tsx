@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Layout } from "../components/Layout";
 import { useAuth } from "../hooks/useAuth";
 import { supabase } from "../lib/supabase";
-import { Plus, Search, PackagePlus, ImagePlus, X, History, Pencil, Boxes, BarChart3, Tags, Trash2 } from "lucide-react";
+import { Plus, Search, PackagePlus, ImagePlus, X, History, Pencil, Boxes, BarChart3, Tags, Trash2, AlertTriangle } from "lucide-react";
 
 const emptyForm = {
   sku: "",
@@ -19,6 +19,15 @@ const emptyForm = {
 };
 
 const emptyMov = { product_id: "", movement_type: "entrada", quantity: "", reference: "", notes: "" };
+
+const WRITEOFF_REASONS = [
+  "Dañado en almacén",
+  "Roto en transporte / entrega",
+  "Vencido / caducado",
+  "Defecto de fábrica",
+  "Otro",
+];
+const emptyWriteoff = { product_id: "", quantity: "", reason: WRITEOFF_REASONS[0], notes: "" };
 
 const numberFormatter = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const moneyFormatter = new Intl.NumberFormat("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -41,6 +50,7 @@ function movementLabel(type: string) {
     venta: "Venta",
     ajuste_entrada: "Ajuste entrada",
     ajuste_salida: "Ajuste salida",
+    merma: "Producto dañado (merma)",
   };
   return labels[type] || type;
 }
@@ -56,7 +66,7 @@ export function Productos() {
   const [q, setQ] = useState("");
   const [categoryId, setCategoryId] = useState("Todas");
   const [showProjectPending, setShowProjectPending] = useState(false);
-  const [section, setSection] = useState<"products" | "inventory">("products");
+  const [section, setSection] = useState<"products" | "inventory" | "writeoffs">("products");
   const [open, setOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
   const [movementOpen, setMovementOpen] = useState(false);
@@ -72,6 +82,10 @@ export function Productos() {
   const [invDate, setInvDate] = useState(todayIso().slice(0, 7));
   const [invSearch, setInvSearch] = useState("");
   const [inventoryLoading, setInventoryLoading] = useState(false);
+  const [writeoffs, setWriteoffs] = useState<any[]>([]);
+  const [woSearch, setWoSearch] = useState("");
+  const [writeoffOpen, setWriteoffOpen] = useState(false);
+  const [wo, setWo] = useState(emptyWriteoff);
   const [form, setForm] = useState(emptyForm);
   const [mov, setMov] = useState(emptyMov);
   const [file, setFile] = useState<File | null>(null);
@@ -80,7 +94,7 @@ export function Productos() {
   const canEdit = profile?.role !== "vendedor";
 
   useEffect(() => { load(); }, []);
-  useEffect(() => { if (section === "inventory") loadInventory(); }, [section, invPeriod, invDate]);
+  useEffect(() => { if (section === "inventory") loadInventory(); if (section === "writeoffs") loadWriteoffs(); }, [section, invPeriod, invDate]);
 
   async function load() {
     const [{ data: cats }, { data: prods, error: pe }] = await Promise.all([
@@ -131,6 +145,53 @@ export function Productos() {
     else setAllMovements(mResult.data ?? []);
     if (!uResult.error) setMovementUsers(uResult.data ?? []);
     setInventoryLoading(false);
+  }
+
+  async function loadWriteoffs() {
+    setInventoryLoading(true);
+    setError("");
+    const { start, end } = inventoryRange();
+    const { data, error: e } = await supabase
+      .from("product_writeoffs")
+      .select("id,product_id,sku,product_name,brand,unit,quantity,purchase_price,loss_value,reference,notes,created_by,created_by_name,created_at")
+      .gte("created_at", start)
+      .lt("created_at", end)
+      .order("created_at", { ascending: false });
+    if (e) setError(e.message);
+    else setWriteoffs(data ?? []);
+    setInventoryLoading(false);
+  }
+
+  function openWriteoff(product?: any) {
+    setError("");
+    setWo({ ...emptyWriteoff, product_id: product?.product_id || "" });
+    setWriteoffOpen(true);
+  }
+
+  async function saveWriteoff() {
+    setError("");
+    if (!profile || !wo.product_id || Number(wo.quantity) <= 0) {
+      setError("Selecciona un producto e indica una cantidad mayor que cero.");
+      return;
+    }
+    setSaving(true);
+    const { error: e } = await supabase.from("inventory_movements").insert({
+      product_id: wo.product_id,
+      movement_type: "merma",
+      quantity: Number(wo.quantity),
+      reference: wo.reason,
+      notes: wo.notes.trim() || null,
+      created_by: profile.id,
+    });
+    if (e) setError(e.message);
+    else {
+      setWriteoffOpen(false);
+      setWo(emptyWriteoff);
+      await load();
+      if (section === "inventory") await loadInventory();
+      if (section === "writeoffs") await loadWriteoffs();
+    }
+    setSaving(false);
   }
 
   function newProduct() {
@@ -376,10 +437,10 @@ export function Productos() {
   }, [allMovements, products, invSearch]);
 
   const inventoryTotals = useMemo(() => {
-    const totals: Record<string, number> = { inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0 };
+    const totals: Record<string, number> = { inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0, merma: 0 };
     filteredInventoryMovements.forEach(m => { totals[m.movement_type] = (totals[m.movement_type] || 0) + Number(m.quantity || 0); });
     const diferencia = totals.ajuste_entrada - totals.ajuste_salida;
-    const net = totals.inicial + totals.entrada + totals.ajuste_entrada - totals.salida - totals.venta - totals.ajuste_salida;
+    const net = totals.inicial + totals.entrada + totals.ajuste_entrada - totals.salida - totals.venta - totals.ajuste_salida - totals.merma;
     return { ...totals, diferencia, net };
   }, [filteredInventoryMovements]);
 
@@ -388,7 +449,7 @@ export function Productos() {
     filteredInventoryMovements.forEach(m => {
       const p = products.find(x => x.product_id === m.product_id);
       const key = m.product_id;
-      if (!map.has(key)) map.set(key, { product_id: key, sku: p?.sku || "—", name: p?.name || "Producto", inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0, diferencia: 0, net: 0 });
+      if (!map.has(key)) map.set(key, { product_id: key, sku: p?.sku || "—", name: p?.name || "Producto", inicial: 0, entrada: 0, salida: 0, venta: 0, ajuste_entrada: 0, ajuste_salida: 0, merma: 0, diferencia: 0, net: 0 });
       const row = map.get(key);
       row[m.movement_type] += Number(m.quantity || 0);
       row.diferencia = row.ajuste_entrada - row.ajuste_salida;
@@ -397,11 +458,27 @@ export function Productos() {
     return Array.from(map.values()).sort((a, b) => a.sku.localeCompare(b.sku));
   }, [filteredInventoryMovements, products]);
 
+  const filteredWriteoffs = useMemo(() => {
+    const needle = woSearch.trim().toLowerCase();
+    return writeoffs.filter(w => {
+      const text = `${w.sku} ${w.product_name} ${w.reference || ""} ${w.notes || ""} ${w.created_by_name || ""}`.toLowerCase();
+      return !needle || text.includes(needle);
+    });
+  }, [writeoffs, woSearch]);
+
+  const writeoffTotals = useMemo(() => filteredWriteoffs.reduce(
+    (acc, w) => ({ quantity: acc.quantity + Number(w.quantity || 0), value: acc.value + Number(w.loss_value || 0) }),
+    { quantity: 0, value: 0 }
+  ), [filteredWriteoffs]);
+
+  const woProduct = products.find(p => p.product_id === wo.product_id);
+
   return <Layout title="Productos" subtitle="Productos, precios, imágenes y control de inventario">
     <div className="space-y-4">
       <div className="flex flex-wrap gap-2">
         <button onClick={() => setSection("products")} className={`px-4 py-2.5 rounded-xl text-sm border ${section === "products" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><Boxes size={15} className="inline mr-1"/>Productos</button>
         <button onClick={() => setSection("inventory")} className={`px-4 py-2.5 rounded-xl text-sm border ${section === "inventory" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><BarChart3 size={15} className="inline mr-1"/>Movimientos de inventario</button>
+        <button onClick={() => setSection("writeoffs")} className={`px-4 py-2.5 rounded-xl text-sm border ${section === "writeoffs" ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}><AlertTriangle size={15} className="inline mr-1"/>Stock con baja</button>
       </div>
 
       {error && <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-xl p-3">{error}</div>}
@@ -417,6 +494,7 @@ export function Productos() {
             {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           {canEdit && <button onClick={newProduct} className="px-4 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm"><Plus size={15} className="inline mr-1"/>Nuevo producto</button>}
+          {canEdit && <button onClick={() => openWriteoff()} className="px-4 py-2.5 rounded-xl bg-white border border-red-200 text-red-700 text-sm whitespace-nowrap"><AlertTriangle size={15} className="inline mr-1"/>Producto dañado</button>}
         </div>
         <label className="flex items-center gap-2 text-xs text-[#5B6670]">
           <input type="checkbox" checked={showProjectPending} onChange={e => setShowProjectPending(e.target.checked)} />
@@ -439,6 +517,7 @@ export function Productos() {
                   <button title="Editar producto" onClick={() => editProduct(p)} className="text-[#1B3A6B]"><Pencil size={16}/></button>
                   <button title="Movimiento de stock" onClick={() => { setMov({ ...emptyMov, product_id: p.product_id }); setMovementOpen(true); }} className="text-[#1B3A6B]"><PackagePlus size={16}/></button>
                   <button title="Historial" onClick={() => showHistory(p)} className="text-[#5B6670]"><History size={16}/></button>
+                  <button title="Reportar producto dañado" onClick={() => openWriteoff(p)} className="text-amber-600"><AlertTriangle size={16}/></button>
                   <button title="Eliminar producto" onClick={() => deleteProduct(p)} className="text-red-600"><Trash2 size={16}/></button>
                 </div></td>}
               </tr>)}
@@ -475,6 +554,7 @@ export function Productos() {
           <SummaryCard label="Entradas" value={inventoryTotals.entrada} />
           <SummaryCard label="Ventas" value={inventoryTotals.venta} />
           <SummaryCard label="Salidas" value={inventoryTotals.salida} />
+          <SummaryCard label="Mermas (dañado)" value={inventoryTotals.merma} />
           <SummaryCard label="Ajuste entrada" value={inventoryTotals.ajuste_entrada} />
           <SummaryCard label="Ajuste salida" value={inventoryTotals.ajuste_salida} />
           <SummaryCard label="Diferencia ajustes" value={inventoryTotals.diferencia} />
@@ -484,9 +564,9 @@ export function Productos() {
         <div className="bg-white rounded-2xl p-5 overflow-x-auto">
           <div className="font-semibold text-sm mb-3">Resumen por producto</div>
           <table className="w-full text-sm">
-            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Producto</th><th className="text-right">Inicial</th><th className="text-right">Entradas</th><th className="text-right">Ventas</th><th className="text-right">Salidas</th><th className="text-right">Aj. entrada</th><th className="text-right">Aj. salida</th><th className="text-right">Diferencia</th><th className="text-right">Neto periodo</th></tr></thead>
-            <tbody>{inventoryByProduct.map(r => <tr key={r.product_id} className="border-b"><td className="py-2 font-mono text-xs">{r.sku}</td><td>{r.name}</td><td className="text-right">{fmt(r.inicial)}</td><td className="text-right">{fmt(r.entrada)}</td><td className="text-right">{fmt(r.venta)}</td><td className="text-right">{fmt(r.salida)}</td><td className="text-right">{fmt(r.ajuste_entrada)}</td><td className="text-right">{fmt(r.ajuste_salida)}</td><td className={`text-right font-semibold ${r.diferencia < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.diferencia)}</td><td className={`text-right font-semibold ${r.net < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.net)}</td></tr>)}
-            {inventoryByProduct.length === 0 && <tr><td colSpan={10} className="py-8 text-center italic text-[#5B6670]">Sin movimientos para el periodo seleccionado.</td></tr>}</tbody>
+            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Producto</th><th className="text-right">Inicial</th><th className="text-right">Entradas</th><th className="text-right">Ventas</th><th className="text-right">Salidas</th><th className="text-right">Mermas</th><th className="text-right">Aj. entrada</th><th className="text-right">Aj. salida</th><th className="text-right">Diferencia</th><th className="text-right">Neto periodo</th></tr></thead>
+            <tbody>{inventoryByProduct.map(r => <tr key={r.product_id} className="border-b"><td className="py-2 font-mono text-xs">{r.sku}</td><td>{r.name}</td><td className="text-right">{fmt(r.inicial)}</td><td className="text-right">{fmt(r.entrada)}</td><td className="text-right">{fmt(r.venta)}</td><td className="text-right">{fmt(r.salida)}</td><td className="text-right text-red-600">{fmt(r.merma)}</td><td className="text-right">{fmt(r.ajuste_entrada)}</td><td className="text-right">{fmt(r.ajuste_salida)}</td><td className={`text-right font-semibold ${r.diferencia < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.diferencia)}</td><td className={`text-right font-semibold ${r.net < 0 ? "text-red-600" : "text-[#3E7A56]"}`}>{fmt(r.net)}</td></tr>)}
+            {inventoryByProduct.length === 0 && <tr><td colSpan={11} className="py-8 text-center italic text-[#5B6670]">Sin movimientos para el periodo seleccionado.</td></tr>}</tbody>
           </table>
         </div>
 
@@ -504,6 +584,76 @@ export function Productos() {
           </table>}
         </div>
       </div>}
+
+      {section === "writeoffs" && <div className="space-y-4">
+        <div className="bg-white rounded-2xl p-5">
+          <div className="flex flex-col lg:flex-row gap-3 lg:items-end">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-[#0F2647]">Stock dado de baja (productos dañados / en mal estado)</div>
+              <div className="text-xs text-[#5B6670]">No son ventas: no cuentan en reportes comerciales ni en el desempeño de vendedores, solo descuentan el stock disponible. Se cargan las bajas del periodo seleccionado.</div>
+            </div>
+            <label className="text-xs text-[#5B6670]">Periodo
+              <select value={invPeriod} onChange={e => { const next = e.target.value as any; setInvPeriod(next); const d = new Date(); const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const day = String(d.getDate()).padStart(2,"0"); setInvDate(next === "day" ? `${y}-${m}-${day}` : next === "month" ? `${y}-${m}` : `${y}`); }} className="block border rounded-xl px-3 py-2.5 bg-white text-sm mt-1 min-w-36">
+                <option value="day">Día</option><option value="month">Mes</option><option value="year">Año</option>
+              </select>
+            </label>
+            <label className="text-xs text-[#5B6670]">Fecha de referencia
+              <input type={invPeriod === "day" ? "date" : invPeriod === "month" ? "month" : "number"} min={invPeriod === "year" ? "2000" : undefined} max={invPeriod === "year" ? "2100" : undefined} value={invDate} onChange={e => setInvDate(e.target.value)} className="block border rounded-xl px-3 py-2 bg-white text-sm mt-1"/>
+            </label>
+            <div className="relative lg:w-80">
+              <Search size={15} className="absolute left-3 bottom-3 text-[#5B6670]"/>
+              <input value={woSearch} onChange={e => setWoSearch(e.target.value)} placeholder="Buscar producto, motivo..." className="w-full pl-9 pr-3 py-2.5 rounded-xl border bg-white text-sm"/>
+            </div>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 gap-3">
+          <SummaryCard label="Unidades dadas de baja" value={writeoffTotals.quantity} />
+          <div className="rounded-2xl p-4 border bg-red-50 border-red-100">
+            <div className="text-xs text-red-700">Pérdida estimada del periodo</div>
+            <div className="text-xl font-semibold mt-1 text-red-700">Bs {money(writeoffTotals.value)}</div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-2xl p-5 overflow-x-auto">
+          <div className="flex justify-between items-center mb-3"><div className="font-semibold text-sm">Detalle de bajas</div><div className="text-xs text-[#5B6670]">{filteredWriteoffs.length} registros</div></div>
+          {inventoryLoading ? <div className="py-8 text-center text-sm text-[#5B6670]">Cargando...</div> : <table className="w-full text-sm">
+            <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Fecha</th><th>Código</th><th>Producto</th><th className="text-right">Cantidad</th><th>Motivo</th><th>Detalle</th><th>Registrado por</th><th className="text-right">Pérdida (Bs)</th></tr></thead>
+            <tbody>{filteredWriteoffs.map(w => <tr key={w.id} className="border-b align-top">
+              <td className="py-2 whitespace-nowrap">{new Date(w.created_at).toLocaleString("es-BO")}</td>
+              <td className="font-mono text-xs">{w.sku}</td>
+              <td className="min-w-48">{w.product_name}</td>
+              <td className="text-right font-semibold text-red-600">−{fmt(w.quantity)}</td>
+              <td>{w.reference || "—"}</td>
+              <td>{w.notes || "—"}</td>
+              <td>{w.created_by_name || "—"}</td>
+              <td className="text-right">Bs {money(w.loss_value)}</td>
+            </tr>)}
+            {filteredWriteoffs.length === 0 && <tr><td colSpan={8} className="py-8 text-center italic text-[#5B6670]">Sin bajas registradas para el periodo seleccionado.</td></tr>}</tbody>
+          </table>}
+        </div>
+      </div>}
+
+      {writeoffOpen && <Modal title="Reportar producto dañado" onClose={() => setWriteoffOpen(false)}>
+        <div className="space-y-3">
+          <label className="block text-xs text-[#5B6670]">Producto
+            <select value={wo.product_id} onChange={e => setWo({ ...wo, product_id: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
+              <option value="">Seleccionar producto...</option>
+              {products.map(p => <option key={p.product_id} value={p.product_id}>{p.sku} — {p.name}</option>)}
+            </select>
+          </label>
+          {woProduct && <div className="text-xs text-[#5B6670]">Stock actual: <b>{fmt(woProduct.stock)}</b> {woProduct.unit || ""}</div>}
+          <Field label="Cantidad dañada" type="number" value={wo.quantity} onChange={v => setWo({ ...wo, quantity: v })}/>
+          {woProduct && Number(wo.quantity) > Number(woProduct.stock) && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2">La cantidad ingresada es mayor al stock actual registrado ({fmt(woProduct.stock)}). Verifica antes de guardar.</div>}
+          <label className="block text-xs text-[#5B6670]">Motivo
+            <select value={wo.reason} onChange={e => setWo({ ...wo, reason: e.target.value })} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
+              {WRITEOFF_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </label>
+          <label className="block text-xs text-[#5B6670]">Detalle (opcional)<textarea value={wo.notes} onChange={e => setWo({ ...wo, notes: e.target.value })} rows={3} className="w-full border rounded-xl p-2.5 mt-1 text-sm" placeholder="Ej.: 3 unidades con el empaque roto, reportado por bodega el 28/09."/></label>
+          <button disabled={saving} onClick={saveWriteoff} className="w-full py-2.5 rounded-xl bg-red-600 text-white text-sm disabled:opacity-50">{saving ? "Guardando..." : "Registrar baja"}</button>
+        </div>
+      </Modal>}
 
       {open && <Modal title={editingProduct ? `Editar producto — ${editingProduct.sku}` : "Nuevo producto"} onClose={() => { setOpen(false); setEditingProduct(null); }}>
         <div className="space-y-3">
