@@ -86,6 +86,20 @@ export function Cobranza() {
     return ok && `${s.sale_number} ${name}`.toLowerCase().includes(search.toLowerCase());
   }), [sales, customers, search, filter]);
 
+  // Si la búsqueda de arriba no encuentra nada porque coincide con una venta
+  // en Borrador (que a propósito nunca aparece en esta tabla), se avisa
+  // dónde sí se puede encontrar — en vez de dejar solo "sin registros",
+  // que hacía pensar que la venta no existía.
+  const searchedBorrador = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    if (!term) return null;
+    return sales.find(s => {
+      if (s.status !== "borrador") return false;
+      const name = customers.find(c => c.id === s.customer_id)?.name || "";
+      return `${s.sale_number} ${name}`.toLowerCase().includes(term);
+    }) || null;
+  }, [sales, customers, search]);
+
   // "Últimos pagos" solo mostraba los 10 más recientes, sin forma de buscar
   // uno en particular — un pago de una venta vieja podía quedar fuera de
   // esos 10 y parecer que no existía. Con texto en el buscador se filtra
@@ -210,7 +224,7 @@ export function Cobranza() {
             </tr>;
           })}</tbody>
         </table>
-        {rows.length === 0 && <div className="text-center py-8 text-sm text-slate-500">Sin registros para el filtro seleccionado.</div>}
+        {rows.length === 0 && <div className="text-center py-8 text-sm text-slate-500">{searchedBorrador ? <>"{searchedBorrador.sale_number}" está en Borrador — por eso no aparece aquí (esta tabla no muestra borradores). Si tiene un pago que regularizar, bájalo a "Últimos pagos" y búscalo ahí.</> : "Sin registros para el filtro seleccionado."}</div>}
       </div>
 
       {/* Tarjetas en celular */}
@@ -238,7 +252,7 @@ export function Cobranza() {
             </div>
           </div>;
         })}
-        {rows.length === 0 && <div className="text-center py-8 text-sm text-slate-500">Sin registros para el filtro seleccionado.</div>}
+        {rows.length === 0 && <div className="text-center py-8 text-sm text-slate-500">{searchedBorrador ? <>"{searchedBorrador.sale_number}" está en Borrador — por eso no aparece aquí (esta tabla no muestra borradores). Si tiene un pago que regularizar, bájalo a "Últimos pagos" y búscalo ahí.</> : "Sin registros para el filtro seleccionado."}</div>}
       </div>
     </div>
 
