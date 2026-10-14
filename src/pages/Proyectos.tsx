@@ -165,6 +165,8 @@ export function Proyectos() {
   const [reportRows, setReportRows] = useState<any[]>([]);
   const [saving, setSaving] = useState(false);
   const [invoiceAlertsAll, setInvoiceAlertsAll] = useState<any[]>([]);
+  const [invoicedAcqDraft, setInvoicedAcqDraft] = useState("0");
+  const [savingInvoicedAcq, setSavingInvoicedAcq] = useState(false);
 
   useEffect(() => {
     if (profile?.id) {
@@ -680,6 +682,26 @@ export function Proyectos() {
       await refreshCurrentProject();
     } finally {
       setLoading(false);
+    }
+  }
+
+  // ADQ. FACT: monto de adquisiciones facturadas que un admin carga a mano
+  // en Rentabilidad y que se resta directo de "Impuestos a pagar" (lo
+  // calcula la vista project_profitability — ver migración Fase 26).
+  useEffect(() => { setInvoicedAcqDraft(String(profitability?.invoiced_acquisitions ?? 0)); }, [profitability]);
+
+  async function saveInvoicedAcquisitions() {
+    if (!current) return;
+    setSavingInvoicedAcq(true);
+    setError("");
+    try {
+      const { error: e } = await supabase.from("projects").update({ invoiced_acquisitions: Number(invoicedAcqDraft || 0) }).eq("id", current.id);
+      if (e) throw e;
+      await refreshCurrentProject();
+    } catch (e: any) {
+      setError(e.message || "No fue posible guardar ADQ. FACT.");
+    } finally {
+      setSavingInvoicedAcq(false);
     }
   }
 
@@ -1469,6 +1491,15 @@ export function Proyectos() {
               <StatCard label="Débito fiscal IVA (13%)" value={profitability.debito_fiscal} />
               <StatCard label="IT (3%)" value={profitability.it} />
               <StatCard label="Comisión" value={profitability.commission_amount} />
+              <div className="rounded-2xl p-4 border bg-white">
+                <div className="text-xs text-[#5B6670]">ADQ. FACT</div>
+                <div className="flex items-center gap-1.5 mt-1">
+                  <span className="text-sm text-[#5B6670]">Bs</span>
+                  <input type="number" min="0" step="0.01" value={invoicedAcqDraft} onChange={e => setInvoicedAcqDraft(e.target.value)} className="w-full border rounded-lg px-2 py-1 text-sm" />
+                  <button onClick={saveInvoicedAcquisitions} disabled={savingInvoicedAcq} title="Guardar ADQ. FACT" className="shrink-0 text-xs font-semibold text-[#1B3A6B] border border-[#1B3A6B]/30 rounded-lg px-2 py-1 hover:bg-[#1B3A6B]/5 disabled:opacity-50">{savingInvoicedAcq ? "..." : "Guardar"}</button>
+                </div>
+                <div className="text-[10px] text-[#5B6670] mt-1">Se resta directo de Impuestos a pagar.</div>
+              </div>
               <StatCard label="Impuestos a pagar" value={profitability.impuestos_a_pagar} />
               <StatCard label="Utilidad bruta" value={profitability.utilidad_bruta} />
               <StatCard label="Utilidad neta después de impuestos" value={profitability.utilidad_neta} strong />

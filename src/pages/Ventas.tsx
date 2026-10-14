@@ -66,6 +66,7 @@ export function Ventas() {
   // "new" como formulario de edición cuando correctingSaleId está definido.
   const [correctingSaleId, setCorrectingSaleId] = useState<string | null>(null);
   const [correctingSaleNumber, setCorrectingSaleNumber] = useState("");
+  const [correctingOriginalAmountPaid, setCorrectingOriginalAmountPaid] = useState(0);
   const [saleDateDraft, setSaleDateDraft] = useState(isoToday());
   const [correctReason, setCorrectReason] = useState("");
   const [correcting, setCorrecting] = useState(false);
@@ -126,7 +127,7 @@ export function Ventas() {
     setSaved(null); setItems([]); setCustomerId(""); setSellerId(profile?.id ?? ""); setQuotationId("");
     setPaymentMethod("Contado"); setDeliveryTime("Inmediata"); setPurchaseOrderNumber(""); setSubject(""); setDiscount("0"); setAmountPaid("0"); setDueDate(""); setDueDateOverride(false);
     setObservations(""); setProductSearch(""); setError(""); setScreen("new");
-    setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectReason(""); setSaleDateDraft(isoToday());
+    setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectingOriginalAmountPaid(0); setCorrectReason(""); setSaleDateDraft(isoToday());
     if (params.get("quotation")) setParams({});
   }
 
@@ -276,7 +277,7 @@ export function Ventas() {
       setSaved(s); setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "—");
       setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount||0)); setAmountPaid(String(s.amount_paid||0)); setDueDate(s.due_date||""); setObservations(s.observations||""); setItems((data??[]).map((i:any)=>({...i,stock:0})));
-      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setShowDeliveryForm(false);
+      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectingOriginalAmountPaid(0); setShowDeliveryForm(false);
       await loadDeliveryData(s.id);
       setScreen("view"); if(printAfter) setTimeout(()=>window.print(),120);
     } catch(e:any){ setError(e.message || "No fue posible abrir la venta."); } finally { setLoading(false); }
@@ -317,7 +318,7 @@ export function Ventas() {
       setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "");
       setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount || 0)); setDueDate(s.due_date || ""); setDueDateOverride(false);
-      setAmountPaid(String(s.amount_paid || 0));
+      setAmountPaid(String(s.amount_paid || 0)); setCorrectingOriginalAmountPaid(Number(s.amount_paid || 0));
       setObservations(s.observations || ""); setItems(mapped); setProductSearch("");
       setSaleDateDraft(String(s.sale_date || "").slice(0, 10) || isoToday());
       setCorrectReason(""); setCorrectingSaleId(s.id); setCorrectingSaleNumber(s.sale_number);
@@ -333,6 +334,9 @@ export function Ventas() {
     if (!customerId || !sellerId || !items.length) return setError("Selecciona cliente, vendedor y al menos un producto.");
     if (paymentMethod === "Crédito" && balance > 0 && !dueDate) return setError("Para una venta a crédito con saldo pendiente debes indicar fecha de vencimiento.");
     if (paymentMethod === "Crédito" && balance > 0 && dueDate && dueDate < saleDateDraft && !dueDateOverride) return setError("El vencimiento no puede ser anterior a la fecha de la venta. Si es un caso excepcional, marca la confirmación de vencimiento excepcional.");
+    const targetPaid = Number(amountPaid || 0);
+    if (targetPaid < correctingOriginalAmountPaid) return setError(`No se puede bajar el pago inicial desde aquí (ya hay Bs ${money(correctingOriginalAmountPaid)} registrados como pagados). Para corregir un pago mal registrado, elimínalo desde Cobranza → Últimos pagos y luego corrige la venta.`);
+    if (targetPaid > total) return setError(`El pago inicial (Bs ${money(targetPaid)}) no puede ser mayor al total de la venta (Bs ${money(total)}).`);
     for (const i of items) {
       if (Number(i.quantity) <= 0) return setError(`La cantidad de ${i.sku} debe ser mayor a cero.`);
       if (Number(i.quantity) > Number(i.stock)) return setError(`Stock insuficiente para ${i.sku}. Disponible (incluyendo lo que esta venta ya tenía reservado): ${qty(i.stock)}.`);
@@ -350,6 +354,7 @@ export function Ventas() {
         p_subject: subject || null,
         p_customer_address: selectedCustomer?.address || null,
         p_discount: Number(discount || 0),
+        p_amount_paid: targetPaid,
         p_due_date: paymentMethod === "Crédito" ? (dueDate || null) : null,
         p_due_date_override: dueDateOverride,
         p_observations: observations || null,
@@ -361,7 +366,7 @@ export function Ventas() {
         })),
       });
       if (e) throw e;
-      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectReason("");
+      setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectingOriginalAmountPaid(0); setCorrectReason("");
       await loadAll();
       await viewSale(data);
     } catch (e: any) {
@@ -542,14 +547,14 @@ export function Ventas() {
               </div>}
             </>}
           </div>)}
-          <div className="grid md:grid-cols-2 gap-3 mt-4">
+          <div className="grid md:grid-cols-3 gap-3 mt-4">
             <label className="text-xs">Forma de pago<select value={paymentMethod} onChange={e=>setPaymentMethod(e.target.value)} className="w-full border rounded-lg p-2 mt-1"><option>Contado</option><option>Crédito</option></select></label>
-            {correctingSaleId ? <label className="text-xs">Fecha de la venta<input type="date" value={saleDateDraft} onChange={e=>setSaleDateDraft(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label> : <label className="text-xs">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
+            {correctingSaleId && <label className="text-xs">Fecha de la venta<input type="date" value={saleDateDraft} onChange={e=>setSaleDateDraft(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
+            {paymentMethod==="Crédito" && <label className="text-xs">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
           </div>
-          {correctingSaleId && <label className="block text-xs mt-3">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
+          {paymentMethod==="Crédito" && <label className="block text-xs mt-3">Pago inicial (Bs){correctingSaleId && <span className="font-normal text-[#5B6670]"> — ya hay Bs {money(correctingOriginalAmountPaid)} registrados; desde aquí solo se puede aumentar, nunca bajar (para bajarlo, elimina el pago desde Cobranza)</span>}<input type="number" min={correctingSaleId ? correctingOriginalAmountPaid : 0} max={total} step="0.01" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
+          <label className="block text-xs mt-3">Tiempo de entrega<input value={deliveryTime} onChange={e=>setDeliveryTime(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
           <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Orden de compra (Nº, para la nota de entrega)<input value={purchaseOrderNumber} onChange={e=>setPurchaseOrderNumber(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Objeto (para la nota de entrega)<input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="Ej. ADQUISICION DE EQUIPOS ELECTRICOS" className="w-full border rounded-lg p-2 mt-1"/></label></div>
-          {paymentMethod==="Crédito" && !correctingSaleId && <div className="grid md:grid-cols-2 gap-3 mt-3"><label className="text-xs">Pago inicial (Bs)<input type="number" min="0" max={total} step="0.01" value={amountPaid} onChange={e=>setAmountPaid(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label><label className="text-xs">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label></div>}
-          {paymentMethod==="Crédito" && correctingSaleId && <label className="block text-xs mt-3">Vencimiento<input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>}
           <label className="block text-xs mt-3">Descuento general (Bs)<input type="number" min="0" step="0.01" value={discount} onChange={e=>setDiscount(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
           <label className="block text-xs mt-3">Observaciones<textarea rows={3} value={observations} onChange={e=>setObservations(e.target.value)} className="w-full border rounded-lg p-2 mt-1"/></label>
           {correctingSaleId && <label className="block text-xs mt-3">Motivo de la corrección (queda registrado en la venta)<textarea rows={2} value={correctReason} onChange={e=>setCorrectReason(e.target.value)} placeholder="Ej.: se cargó mal la cantidad del producto X, se corrige a pedido del cliente." className="w-full border rounded-lg p-2 mt-1"/></label>}
