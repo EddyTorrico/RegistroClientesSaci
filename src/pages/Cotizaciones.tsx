@@ -49,9 +49,11 @@ export function Cotizaciones() {
   const [products, setProducts] = useState<any[]>([]);
   const [sellers, setSellers] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [customer, setCustomer] = useState("");
   const [sellerId, setSellerId] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [search, setSearch] = useState("");
   const [quoteSearch, setQuoteSearch] = useState("");
   const [valid, setValid] = useState("15");
@@ -88,28 +90,31 @@ export function Cotizaciones() {
 
   async function load() {
     setError("");
-    const [customersResult, productsResult, sellersResult, quotationsResult] = await Promise.all([
+    const [customersResult, productsResult, sellersResult, quotationsResult, projectsResult] = await Promise.all([
       supabase.from("customers").select("id,name,address,city,zone,phone").order("name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,sale_price,stock,active,image_url").eq("active", true).eq("is_project_product", false).order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
-      supabase.from("quotations").select("id,quotation_number,customer_id,user_id,quotation_date,valid_until,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total,created_at").order("created_at", { ascending: false }),
+      supabase.from("quotations").select("id,quotation_number,customer_id,user_id,project_id,quotation_date,valid_until,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total,created_at").order("created_at", { ascending: false }),
+      supabase.from("projects").select("id,project_number,name,customer_id,status").order("created_at", { ascending: false }),
     ]);
 
     if (customersResult.error) setError(customersResult.error.message);
     else if (productsResult.error) setError(productsResult.error.message);
     else if (sellersResult.error) setError(sellersResult.error.message);
     else if (quotationsResult.error) setError(quotationsResult.error.message);
+    else if (projectsResult.error) setError(projectsResult.error.message);
 
     setCustomers(customersResult.data ?? []);
     setProducts(productsResult.data ?? []);
     setSellers(sellersResult.data ?? []);
     setQuotations(quotationsResult.data ?? []);
+    setProjects(projectsResult.data ?? []);
   }
 
   async function reloadQuotations() {
     const { data, error: e } = await supabase
       .from("quotations")
-      .select("id,quotation_number,customer_id,user_id,quotation_date,valid_until,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total,created_at")
+      .select("id,quotation_number,customer_id,user_id,project_id,quotation_date,valid_until,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total,created_at")
       .order("created_at", { ascending: false });
     if (e) setError(e.message);
     else setQuotations(data ?? []);
@@ -120,6 +125,7 @@ export function Cotizaciones() {
     setItems([]);
     setCustomer("");
     setSellerId(profile?.id ?? "");
+    setProjectId("");
     setSearch("");
     setValid("15");
     setDelivery("Inmediata");
@@ -225,6 +231,7 @@ export function Cotizaciones() {
         const { data: q, error: e } = await supabase.from("quotations").update({
           customer_id: customer,
           user_id: sellerId,
+          project_id: projectId || null,
           customer_address: selectedCustomer?.address?.trim() || null,
           valid_until: d.toISOString().slice(0, 10),
           delivery_time: delivery,
@@ -263,6 +270,7 @@ export function Cotizaciones() {
         const { data: q, error: e } = await supabase.from("quotations").insert({
           customer_id: customer,
           user_id: sellerId,
+          project_id: projectId || null,
           customer_address: selectedCustomer?.address?.trim() || null,
           valid_until: d.toISOString().slice(0, 10),
           delivery_time: delivery,
@@ -318,8 +326,7 @@ export function Cotizaciones() {
       // todavía puede no estar comprado — no se le exige stock disponible
       // para poder actualizarla. El stock sí se exige al convertirla en
       // venta (Ventas), que es cuando de verdad sale del inventario.
-      const { data: linkedProject } = await supabase.from("projects").select("id").eq("quotation_id", q.id).maybeSingle();
-      setEditingProjectLinked(!!linkedProject);
+      setEditingProjectLinked(!!q.project_id);
 
       // Se busca el stock/estado real en product_inventory (no en el listado
       // filtrado "products", que ya excluye los productos de proyecto aún
@@ -354,6 +361,7 @@ export function Cotizaciones() {
       setSaved(null);
       setCustomer(q.customer_id);
       setSellerId(q.user_id);
+      setProjectId(q.project_id || "");
       setSearch("");
       setValid("15");
       setDelivery(q.delivery_time || "Inmediata");
@@ -373,11 +381,9 @@ export function Cotizaciones() {
   async function deleteQuotation(q: any) {
     setError("");
     let warning = "";
-    try {
-      const { data: linkedProject } = await supabase.from("projects").select("id,project_number").eq("quotation_id", q.id).maybeSingle();
-      if (linkedProject) warning = ` Esta cotización está vinculada al proyecto ${linkedProject.project_number}; si la eliminas, el proyecto quedará sin cotización vinculada.`;
-    } catch {
-      // el módulo Proyectos puede no estar instalado todavía; se ignora la verificación.
+    if (q.project_id) {
+      const proj = projects.find((p: any) => p.id === q.project_id);
+      warning = ` Esta cotización está vinculada al proyecto ${proj?.project_number || ""}; si la eliminas, esa referencia se pierde (el proyecto puede seguir teniendo otras cotizaciones/ventas parciales).`;
     }
     if (!window.confirm(`¿Eliminar la cotización ${q.quotation_number}?${warning} Esta acción no se puede deshacer.`)) return;
     const { error: e } = await supabase.from("quotations").delete().eq("id", q.id);
@@ -425,6 +431,7 @@ export function Cotizaciones() {
       setSaved(q);
       setCustomer(q.customer_id);
       setSellerId(q.user_id);
+      setProjectId(q.project_id || "");
       setDelivery(q.delivery_time || "—");
       setDeliveryPreset(["Inmediata","5 días","10 días","15 días"].includes(q.delivery_time) ? q.delivery_time : "Personalizada");
       setPayment(q.payment_terms || "—");
@@ -558,9 +565,16 @@ export function Cotizaciones() {
           {editingId && <div className="xl:col-span-2 rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">Estás actualizando una cotización existente. Los cambios reemplazan sus productos y totales al guardar.</div>}
           {editingId && editingProjectLinked && <div className="xl:col-span-2 rounded-xl bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">Esta cotización pertenece a un proyecto — no se exige stock disponible para actualizarla (el stock recién se valida cuando se convierta en venta).</div>}
           <div className="bg-white rounded-2xl p-5 space-y-4">
+            <label className="block text-xs text-[#5B6670]">Proyecto (opcional)
+              <select value={projectId} onChange={e => { const pid = e.target.value; setProjectId(pid); const proj = projects.find((x: any) => x.id === pid); if (proj) setCustomer(proj.customer_id); }} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
+                <option value="">Sin proyecto (cotización suelta)</option>
+                {projects.filter((p: any) => p.status !== "perdido").map((p: any) => <option key={p.id} value={p.id}>{p.project_number} · {p.name}</option>)}
+              </select>
+              {projectId && <span className="block text-[11px] text-[#5B6670] mt-1">Esta cotización quedará vinculada al proyecto {projects.find((p: any) => p.id === projectId)?.project_number} — puede ser una tanda parcial más del mismo proyecto.</span>}
+            </label>
             <div className="grid md:grid-cols-2 gap-3">
               <label className="text-xs text-[#5B6670]">Cliente
-                <select value={customer} onChange={e => setCustomer(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
+                <select disabled={!!projectId} value={customer} onChange={e => setCustomer(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
                   <option value="">Seleccionar cliente...</option>
                   {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>

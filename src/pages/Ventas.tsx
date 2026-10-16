@@ -40,10 +40,12 @@ export function Ventas() {
   const [sales, setSales] = useState<any[]>([]);
   const [allSaleItems, setAllSaleItems] = useState<any[]>([]);
   const [quotations, setQuotations] = useState<any[]>([]);
+  const [projects, setProjects] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [customerId, setCustomerId] = useState("");
   const [sellerId, setSellerId] = useState("");
   const [quotationId, setQuotationId] = useState("");
+  const [projectId, setProjectId] = useState("");
   const [paymentMethod, setPaymentMethod] = useState("Contado");
   const [deliveryTime, setDeliveryTime] = useState("Inmediata");
   const [purchaseOrderNumber, setPurchaseOrderNumber] = useState("");
@@ -105,26 +107,27 @@ export function Ventas() {
 
   async function loadAll() {
     setError("");
-    const [c,p,u,s,q,si] = await Promise.all([
+    const [c,p,u,s,q,si,pr] = await Promise.all([
       supabase.from("customers").select("id,name,address,city,zone,phone").order("name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,image_url").eq("active", true).eq("is_project_product", false).order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
-      supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false}),
-      supabase.from("quotations").select("id,quotation_number,customer_id,user_id,quotation_date,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total").order("created_at", {ascending:false}),
+      supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,project_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false}),
+      supabase.from("quotations").select("id,quotation_number,customer_id,user_id,project_id,quotation_date,delivery_time,payment_terms,observations,customer_address,status,subtotal,discount,total").order("created_at", {ascending:false}),
       supabase.from("sale_items").select("sale_id,product_id,quantity,purchase_cost,subtotal"),
+      supabase.from("projects").select("id,project_number,name,customer_id,status").order("created_at", {ascending:false}),
     ]);
-    const firstError = c.error || p.error || u.error || s.error || q.error || si.error;
+    const firstError = c.error || p.error || u.error || s.error || q.error || si.error || pr.error;
     if (firstError) setError(firstError.message);
-    setCustomers(c.data ?? []); setProducts(p.data ?? []); setSellers(u.data ?? []); setSales(s.data ?? []); setQuotations(q.data ?? []); setAllSaleItems(si.data ?? []);
+    setCustomers(c.data ?? []); setProducts(p.data ?? []); setSellers(u.data ?? []); setSales(s.data ?? []); setQuotations(q.data ?? []); setAllSaleItems(si.data ?? []); setProjects(pr.data ?? []);
   }
 
   async function reloadSales() {
-    const {data,error:e} = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false});
+    const {data,error:e} = await supabase.from("sales").select("id,sale_number,customer_id,user_id,quotation_id,project_id,sale_date,customer_address,payment_method,delivery_time,purchase_order_number,subject,status,subtotal,discount,total,amount_paid,balance,due_date,due_date_override,observations,created_at").order("created_at", {ascending:false});
     if (e) setError(e.message); else setSales(data ?? []);
   }
 
   function resetSale() {
-    setSaved(null); setItems([]); setCustomerId(""); setSellerId(profile?.id ?? ""); setQuotationId("");
+    setSaved(null); setItems([]); setCustomerId(""); setSellerId(profile?.id ?? ""); setQuotationId(""); setProjectId("");
     setPaymentMethod("Contado"); setDeliveryTime("Inmediata"); setPurchaseOrderNumber(""); setSubject(""); setDiscount("0"); setAmountPaid("0"); setDueDate(""); setDueDateOverride(false);
     setObservations(""); setProductSearch(""); setError(""); setScreen("new");
     setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectingOriginalAmountPaid(0); setCorrectReason(""); setSaleDateDraft(isoToday());
@@ -158,7 +161,7 @@ export function Ventas() {
           needs_link: !i.product_id,
         };
       });
-      setQuotationId(id); setCustomerId(q.customer_id); setSellerId(q.user_id || profile?.id || "");
+      setQuotationId(id); setCustomerId(q.customer_id); setSellerId(q.user_id || profile?.id || ""); setProjectId(q.project_id || "");
       setPaymentMethod(q.payment_terms === "Crédito" ? "Crédito" : "Contado"); setDeliveryTime(q.delivery_time || "Inmediata");
       setPurchaseOrderNumber(""); setSubject("");
       setDiscount(String(q.discount || 0)); setObservations(q.observations || ""); setItems(normalized); setScreen("new");
@@ -233,7 +236,7 @@ export function Ventas() {
       // sin rastro en el historial de pagos, y no se podía corregir ni
       // eliminar si se cargaba mal.
       const {data:s,error:se} = await supabase.from("sales").insert({
-        customer_id:customerId, user_id:sellerId, quotation_id:quotationId || null,
+        customer_id:customerId, user_id:sellerId, quotation_id:quotationId || null, project_id:projectId || null,
         customer_address:selectedCustomer?.address?.trim() || null, payment_method:paymentMethod, delivery_time:deliveryTime || null,
         purchase_order_number: purchaseOrderNumber.trim() || null, subject: subject.trim() || null,
         subtotal, discount:Number(discount||0), total, amount_paid:0, balance:total, due_date:paymentMethod==="Crédito" && balance>0 ? dueDate : null,
@@ -274,7 +277,7 @@ export function Ventas() {
     setLoading(true); setError("");
     try {
       const {data,error:e} = await supabase.from("sale_items").select("*").eq("sale_id",s.id).order("id"); if(e) throw e;
-      setSaved(s); setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "—");
+      setSaved(s); setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setProjectId(s.project_id || ""); setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "—");
       setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount||0)); setAmountPaid(String(s.amount_paid||0)); setDueDate(s.due_date||""); setObservations(s.observations||""); setItems((data??[]).map((i:any)=>({...i,stock:0})));
       setCorrectingSaleId(null); setCorrectingSaleNumber(""); setCorrectingOriginalAmountPaid(0); setShowDeliveryForm(false);
@@ -314,7 +317,7 @@ export function Ventas() {
         // el servidor de todas formas).
         stock: (stockByProduct[i.product_id] ?? 0) + Number(i.quantity || 0),
       }));
-      setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || "");
+      setCustomerId(s.customer_id); setSellerId(s.user_id); setQuotationId(s.quotation_id || ""); setProjectId(s.project_id || "");
       setPaymentMethod(s.payment_method); setDeliveryTime(s.delivery_time || "");
       setPurchaseOrderNumber(s.purchase_order_number || ""); setSubject(s.subject || "");
       setDiscount(String(s.discount || 0)); setDueDate(s.due_date || ""); setDueDateOverride(false);
@@ -502,8 +505,12 @@ export function Ventas() {
             <div className="text-xs mt-1">Los cambios quedan registrados en las observaciones de la venta, con el motivo que indiques abajo. Si cambias cantidades, el inventario se ajusta automáticamente (nunca se borra el movimiento original, se agrega un ajuste con la diferencia).</div>
           </div>}
           {quotationId && <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800">Venta originada desde cotización <b>{quotations.find(q=>q.id===quotationId)?.quotation_number}</b>.</div>}
+          <label className="block text-xs text-[#5B6670]">Proyecto (opcional)<select disabled={!!quotationId} value={projectId} onChange={e=>{ const pid=e.target.value; setProjectId(pid); const proj=projects.find(x=>x.id===pid); if (proj) setCustomerId(proj.customer_id); }} className="w-full border rounded-xl p-2.5 mt-1 text-sm">
+            <option value="">Sin proyecto (venta suelta)</option>
+            {projects.filter(p=>p.status!=="perdido").map(p=><option key={p.id} value={p.id}>{p.project_number} · {p.name}</option>)}
+          </select>{projectId && <span className="block text-[11px] text-[#5B6670] mt-1">Esta venta quedará vinculada al proyecto {projects.find(p=>p.id===projectId)?.project_number} — puede ser una entrega parcial más del mismo proyecto.</span>}</label>
           <div className="grid md:grid-cols-2 gap-3">
-            <label className="text-xs text-[#5B6670]">Cliente<select disabled={!!quotationId && !correctingSaleId} value={customerId} onChange={e=>setCustomerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
+            <label className="text-xs text-[#5B6670]">Cliente<select disabled={(!!quotationId && !correctingSaleId) || !!projectId} value={customerId} onChange={e=>setCustomerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}</select></label>
             <label className="text-xs text-[#5B6670]">Vendedor<select value={sellerId} onChange={e=>setSellerId(e.target.value)} className="w-full border rounded-xl p-2.5 mt-1 text-sm"><option value="">Seleccionar...</option>{sellers.map(s=><option key={s.id} value={s.id}>{s.full_name} · {s.role}</option>)}</select></label>
           </div>
           {selectedCustomer && <div className="text-xs bg-slate-50 border rounded-xl p-3"><b>Dirección:</b> {selectedCustomer.address||"Sin dirección registrada"}</div>}

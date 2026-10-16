@@ -136,12 +136,16 @@ export function Proyectos() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [invoices, setInvoices] = useState<any[]>([]);
   const [profitability, setProfitability] = useState<any>(null);
-  const [linkedSale, setLinkedSale] = useState<any>(null);
+  const [projectSales, setProjectSales] = useState<any[]>([]);
+  const [projectQuotations, setProjectQuotations] = useState<any[]>([]);
+  const [unlinkedSales, setUnlinkedSales] = useState<any[]>([]);
+  const [unlinkedSaleSearch, setUnlinkedSaleSearch] = useState("");
+  const [linkingSaleId, setLinkingSaleId] = useState<string | null>(null);
   const [saleDeliveryStatus, setSaleDeliveryStatus] = useState<any[]>([]);
   const [projectDeliveryNotes, setProjectDeliveryNotes] = useState<any[]>([]);
   const [viewingDeliveryNote, setViewingDeliveryNote] = useState<any>(null);
+  const [viewingDeliverySale, setViewingDeliverySale] = useState<any>(null);
   const [viewingDeliveryItems, setViewingDeliveryItems] = useState<any[]>([]);
-  const [quotationPreview, setQuotationPreview] = useState<{ quotation_number: string; subtotal: number; discount: number; total: number; items: any[] } | null>(null);
 
   const [itemEditDraft, setItemEditDraft] = useState(emptyItemDraft);
   const [purchaseOpen, setPurchaseOpen] = useState(false);
@@ -178,7 +182,7 @@ export function Proyectos() {
   async function load() {
     setError("");
     const [p, c, s, pr, ia] = await Promise.all([
-      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false }),
+      supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,invoiced_acquisitions,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false }),
       supabase.from("customers").select("id,name,address").order("name"),
       supabase.from("profiles").select("id,full_name,role,active").eq("active", true).order("full_name"),
       supabase.from("product_inventory").select("product_id,sku,name,brand,unit,purchase_price,sale_price,stock,active,is_project_product").eq("active", true).order("name"),
@@ -194,7 +198,7 @@ export function Proyectos() {
   }
 
   async function reloadProjects() {
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false });
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,invoiced_acquisitions,observations,contact_name,contact_email,presentation_at,created_at").order("created_at", { ascending: false });
     if (e) setError(e.message); else setProjects(data ?? []);
   }
 
@@ -326,6 +330,7 @@ export function Proyectos() {
     setCurrent(p);
     setDetailTab("items");
     setViewingDeliveryNote(null);
+    setViewingDeliverySale(null);
     setScreen("detail");
     await loadDetail(p);
   }
@@ -415,21 +420,41 @@ export function Proyectos() {
       setExpenses(ex.data ?? []);
       setDocuments(doc.data ?? []);
 
-      if (p.quotation_id) {
-        const { data: sale } = await supabase.from("sales").select("id,sale_number,status,total,amount_paid,balance,quotation_id,sale_date,purchase_order_number,subject").eq("quotation_id", p.quotation_id).maybeSingle();
-        setLinkedSale(sale ?? null);
-        await loadQuotationPreview(p.quotation_id);
-      } else {
-        setLinkedSale(null);
-        setQuotationPreview(null);
-      }
+      // Un proyecto puede tener varias cotizaciones y varias ventas
+      // parciales (Fase 27) — cada una con su propia nota de venta y sus
+      // propias notas de entrega, en vez de una sola venta/cotización por
+      // proyecto como antes.
+      const [qRes, sRes] = await Promise.all([
+        supabase.from("quotations").select("id,quotation_number,status,total,created_at").eq("project_id", p.id).order("created_at"),
+        supabase.from("sales").select("id,sale_number,status,total,amount_paid,balance,quotation_id,sale_date,purchase_order_number,subject,created_at").eq("project_id", p.id).order("created_at"),
+      ]);
+      if (qRes.error) throw qRes.error;
+      if (sRes.error) throw sRes.error;
+      const quotationRows = qRes.data ?? [];
+      const saleRows = sRes.data ?? [];
+      setProjectQuotations(quotationRows);
+      setProjectSales(saleRows);
 
-      // Nota de entrega: solo tiene sentido una vez que el proyecto ya tiene
-      // una venta generada (se emite desde Ventas; acá solo se muestra).
-      if (p.sale_id) {
+      // Ventas sin proyecto del mismo cliente — candidatas para "Vincular
+      // venta existente" (ej.: una venta que se hizo directo, sin pasar por
+      // este proyecto, y que en realidad le corresponde).
+      const { data: candidates, error: candErr } = await supabase
+        .from("sales")
+        .select("id,sale_number,customer_id,total,balance,status,created_at")
+        .eq("customer_id", p.customer_id)
+        .is("project_id", null)
+        .order("created_at", { ascending: false });
+      if (candErr) throw candErr;
+      setUnlinkedSales(candidates ?? []);
+
+      // Notas de entrega: solo tiene sentido una vez que el proyecto ya
+      // tiene al menos una venta generada (se emiten desde Ventas; acá solo
+      // se muestran, agrupadas por venta).
+      if (saleRows.length) {
+        const saleIds = saleRows.map((s: any) => s.id);
         const [statusRes, notesRes] = await Promise.all([
-          supabase.from("sale_items_delivery_status").select("*").eq("sale_id", p.sale_id),
-          supabase.from("delivery_notes").select("id,delivery_number,sale_id,delivery_date,received_by,notes,created_at").eq("sale_id", p.sale_id).order("created_at"),
+          supabase.from("sale_items_delivery_status").select("*").in("sale_id", saleIds),
+          supabase.from("delivery_notes").select("id,delivery_number,sale_id,delivery_date,received_by,notes,created_at").in("sale_id", saleIds).order("created_at"),
         ]);
         setSaleDeliveryStatus(statusRes.data ?? []);
         setProjectDeliveryNotes(notesRes.data ?? []);
@@ -452,24 +477,9 @@ export function Proyectos() {
     }
   }
 
-  async function loadQuotationPreview(quotationId: string) {
-    const [{ data: q }, { data: qi }] = await Promise.all([
-      supabase.from("quotations").select("quotation_number,subtotal,discount,total").eq("id", quotationId).single(),
-      supabase.from("quotation_items").select("id,sku,description,brand,unit,quantity,unit_price,discount,subtotal").eq("quotation_id", quotationId).order("id"),
-    ]);
-    if (!q) { setQuotationPreview(null); return; }
-    setQuotationPreview({
-      quotation_number: q.quotation_number,
-      subtotal: Number(q.subtotal || 0),
-      discount: Number(q.discount || 0),
-      total: Number(q.total || 0),
-      items: qi ?? [],
-    });
-  }
-
   async function refreshCurrentProject() {
     if (!current) return;
-    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,quotation_id,sale_id,observations,contact_name,contact_email,presentation_at,created_at").eq("id", current.id).single();
+    const { data, error: e } = await supabase.from("projects").select("id,project_number,name,client_reference,customer_id,user_id,status,commission_percent,commission_amount,invoiced_acquisitions,observations,contact_name,contact_email,presentation_at,created_at").eq("id", current.id).single();
     if (e) { setError(e.message); return; }
     setCurrent(data);
     await loadDetail(data);
@@ -587,6 +597,7 @@ export function Proyectos() {
       const { data: q, error: qe } = await supabase.from("quotations").insert({
         customer_id: current.customer_id,
         user_id: current.user_id,
+        project_id: current.id,
         valid_until: d.toISOString().slice(0, 10),
         delivery_time: "A coordinar según disponibilidad",
         payment_terms: "Contado",
@@ -614,8 +625,13 @@ export function Proyectos() {
       })));
       if (ie) throw ie;
 
-      const { error: ue } = await supabase.from("projects").update({ quotation_id: q.id, status: "cotizado" }).eq("id", current.id);
-      if (ue) throw ue;
+      // Solo la primera cotización del proyecto avanza su estado — si ya
+      // está cotizado, ganado, en compra o facturado, una tanda/cotización
+      // parcial adicional no debe hacerlo retroceder.
+      if (current.status === "registrado") {
+        const { error: ue } = await supabase.from("projects").update({ status: "cotizado" }).eq("id", current.id);
+        if (ue) throw ue;
+      }
 
       await refreshCurrentProject();
     } catch (e: any) {
@@ -640,14 +656,30 @@ export function Proyectos() {
     await refreshCurrentProject();
   }
 
-  async function linkSaleToProject() {
-    if (!current || !linkedSale) return;
-    const { error: e } = await supabase.from("projects").update({ sale_id: linkedSale.id, status: "en_compra" }).eq("id", current.id);
-    if (e) { setError(e.message); return; }
-    await refreshCurrentProject();
+  // Vincula retroactivamente una venta que ya existía (sin pasar por este
+  // proyecto) — ej.: se vendió directo y después se descubrió que
+  // correspondía a este proyecto. La venta queda como una tanda/entrega
+  // parcial más del proyecto, con su propia nota de venta y sus propias
+  // notas de entrega.
+  async function linkExistingSale(saleId: string) {
+    if (!current) return;
+    setError("");
+    setLinkingSaleId(saleId);
+    try {
+      const { error: e } = await supabase.from("sales").update({ project_id: current.id }).eq("id", saleId);
+      if (e) throw e;
+      if (current.status === "registrado" || current.status === "cotizado") {
+        await supabase.from("projects").update({ status: "en_compra" }).eq("id", current.id);
+      }
+      await refreshCurrentProject();
+    } catch (e: any) {
+      setError(e.message || "No fue posible vincular la venta al proyecto.");
+    } finally {
+      setLinkingSaleId(null);
+    }
   }
 
-  async function viewProjectDeliveryNote(note: any, printAfter = false) {
+  async function viewProjectDeliveryNote(note: any, sale: any, printAfter = false) {
     setError("");
     const { data, error: e } = await supabase
       .from("delivery_note_items")
@@ -659,6 +691,7 @@ export function Proyectos() {
       return { ...di, sku: st?.sku, description: st?.description, unit: st?.unit, client_item_code: st?.client_item_code };
     });
     setViewingDeliveryNote(note);
+    setViewingDeliverySale(sale);
     setViewingDeliveryItems(withInfo);
     if (printAfter) setTimeout(() => window.print(), 120);
   }
@@ -668,17 +701,12 @@ export function Proyectos() {
     setLoading(true);
     setError("");
     try {
-      // Si ya existe una venta generada desde la cotización de este proyecto
-      // pero todavía no quedó vinculada (por ejemplo, se convirtió a venta
-      // desde Ventas y no se apretó "Vincular al proyecto"), se vincula sola
-      // aquí — sin tocar el estado del proyecto — para que Rentabilidad jale
-      // el total de ventas real.
-      if (current.quotation_id && !current.sale_id) {
-        const { data: sale } = await supabase.from("sales").select("id").eq("quotation_id", current.quotation_id).maybeSingle();
-        if (sale) {
-          await supabase.from("projects").update({ sale_id: sale.id }).eq("id", current.id);
-        }
-      }
+      // Antes acá se auto-vinculaba a mano una venta huérfana generada
+      // desde la cotización del proyecto (projects.sale_id solo podía
+      // apuntar a una venta a la vez). Ya no hace falta: toda venta
+      // convertida desde una cotización de un proyecto, o creada
+      // directamente con el proyecto seleccionado, ya nace con su
+      // project_id correcto (ver Ventas.tsx) — acá solo se refresca.
       await refreshCurrentProject();
     } finally {
       setLoading(false);
@@ -1170,7 +1198,7 @@ export function Proyectos() {
             </div>
             <div className="flex flex-wrap gap-2 items-start">
               <button onClick={() => openEditProject(current)} className="px-3 py-2 rounded-xl border text-[#1B3A6B] text-sm"><Pencil size={14} className="inline mr-1" />Editar proyecto</button>
-              {(current.status === "registrado" || current.status === "cotizado") && <button onClick={() => markStatus("ganado")} disabled={!current.quotation_id} title={!current.quotation_id ? "Genera la cotización antes de marcar como ganado" : ""} className="px-3 py-2 rounded-xl border text-green-700 border-green-200 disabled:opacity-40 text-sm"><Check size={14} className="inline mr-1" />Marcar ganado</button>}
+              {(current.status === "registrado" || current.status === "cotizado") && <button onClick={() => markStatus("ganado")} disabled={projectQuotations.length === 0} title={projectQuotations.length === 0 ? "Genera la cotización antes de marcar como ganado" : ""} className="px-3 py-2 rounded-xl border text-green-700 border-green-200 disabled:opacity-40 text-sm"><Check size={14} className="inline mr-1" />Marcar ganado</button>}
               {(current.status === "registrado" || current.status === "cotizado") && <button onClick={() => markStatus("perdido")} className="px-3 py-2 rounded-xl border text-red-700 border-red-200 text-sm"><X size={14} className="inline mr-1" />Marcar perdido</button>}
               {(current.status === "en_compra") && <button onClick={() => markStatus("facturado")} className="px-3 py-2 rounded-xl border text-[#1B3A6B] text-sm">Cerrar proyecto (facturado)</button>}
               {isAdmin && <button onClick={() => deleteProject(current)} className="px-3 py-2 rounded-xl border text-red-600 border-red-200 text-sm"><Trash2 size={14} className="inline mr-1" />Eliminar</button>}
@@ -1189,7 +1217,7 @@ export function Proyectos() {
             ...(isAdmin ? [["rentabilidad", "Rentabilidad", BarChart3]] as any : []),
             ["entrega", "Nota de entrega", PackageCheck],
           ].map(([key, label, Icon]: any) => (
-            <button key={key} onClick={() => { setDetailTab(key); setViewingDeliveryNote(null); }} className={`relative px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}>
+            <button key={key} onClick={() => { setDetailTab(key); setViewingDeliveryNote(null); setViewingDeliverySale(null); }} className={`relative px-3.5 py-2 rounded-xl text-sm border ${detailTab === key ? "bg-[#1B3A6B] text-white border-[#1B3A6B]" : "bg-white text-[#0F2647]"}`}>
               <Icon size={14} className="inline mr-1" />{label}
               {key === "facturacion" && invoiceAlertCount > 0 && <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-bold align-middle">{invoiceAlertCount}</span>}
             </button>
@@ -1241,51 +1269,77 @@ export function Proyectos() {
           </div>
         </div>}
 
-        {detailTab === "cotizacion" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
-          {!current.quotation_id && <div className="space-y-3">
-            <p className="text-sm text-[#5B6670]">Genera la cotización SACIPETROL a partir de los ítems y precios propuestos. Todavía es una proforma — no hace falta vincular ni crear productos del catálogo para generarla.</p>
-            <button disabled={saving} onClick={generateQuotation} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Generando..." : "Generar cotización SACIPETROL"}</button>
-          </div>}
-          {current.quotation_id && <div className="space-y-3">
-            <div className="rounded-xl bg-blue-50 border border-blue-100 p-3 text-sm text-blue-800 flex flex-wrap items-center justify-between gap-2">
-              <span>Cotización {quotationPreview?.quotation_number ? <b>{quotationPreview.quotation_number}</b> : ""} generada para este proyecto.</span>
-              <button onClick={() => navigate("/cotizaciones")} className="text-[#1B3A6B] font-semibold"><ExternalLink size={14} className="inline mr-1" />Ver / imprimir en Cotizaciones</button>
+        {detailTab === "cotizacion" && !loading && <div className="space-y-4">
+          <div className="bg-white rounded-2xl p-5 space-y-3">
+            <div className="flex flex-wrap justify-between items-center gap-2">
+              <h3 className="font-semibold text-[#0F2647] text-sm">Cotizaciones del proyecto</h3>
+              {projectQuotations.length === 0 && <button disabled={saving} onClick={generateQuotation} className="px-4 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm disabled:opacity-50">{saving ? "Generando..." : "Generar cotización SACIPETROL"}</button>}
             </div>
-
-            {quotationPreview && <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">Código</th><th>Descripción</th><th>Marca</th><th className="text-right">Cant.</th><th>Unidad</th><th className="text-right">Precio unit.</th><th className="text-right">Subtotal</th></tr></thead>
-                <tbody>
-                  {quotationPreview.items.map(it => <tr key={it.id} className="border-b">
-                    <td className="py-2 font-mono text-xs">{it.sku || "sin vincular"}</td>
-                    <td>{it.description}</td>
-                    <td>{it.brand || "—"}</td>
-                    <td className="text-right">{qty(it.quantity)}</td>
-                    <td>{it.unit}</td>
-                    <td className="text-right whitespace-nowrap">Bs {money(it.unit_price)}</td>
-                    <td className="text-right whitespace-nowrap font-medium">Bs {money(it.subtotal)}</td>
-                  </tr>)}
-                  {quotationPreview.items.length === 0 && <tr><td colSpan={7} className="py-6 text-center italic text-[#5B6670]">La cotización no tiene ítems.</td></tr>}
-                </tbody>
-              </table>
-              <div className="mt-3 ml-auto max-w-xs text-sm space-y-1">
-                <div className="flex justify-between"><span>Subtotal:</span><b>Bs {money(quotationPreview.subtotal)}</b></div>
-                <div className="flex justify-between"><span>Descuento:</span><b>Bs {money(quotationPreview.discount)}</b></div>
-                <div className="flex justify-between text-base border-t pt-2"><span>Total General:</span><b>Bs {money(quotationPreview.total)}</b></div>
+            {projectQuotations.length === 0 && <p className="text-xs text-[#5B6670]">Genera la primera cotización SACIPETROL a partir de los ítems y precios propuestos en la pestaña "Ítems". Todavía es una proforma — no hace falta vincular ni crear productos del catálogo para generarla.</p>}
+            {projectQuotations.length > 0 && <>
+              <p className="text-xs text-[#5B6670]">Este proyecto puede tener varias cotizaciones — una por cada entrega/tanda parcial. Para una tanda nueva con ítems distintos a los de la pestaña "Ítems", crea una cotización desde <button onClick={() => navigate("/cotizaciones")} className="text-[#1B3A6B] font-semibold underline">Cotizaciones</button> y selecciona este proyecto en su selector "Proyecto (opcional)".</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">N°</th><th>Estado</th><th className="text-right">Total</th><th>Venta</th><th className="text-right">Acciones</th></tr></thead>
+                  <tbody>
+                    {projectQuotations.map(q => {
+                      const matchingSale = projectSales.find(s => s.quotation_id === q.id);
+                      return <tr key={q.id} className="border-b">
+                        <td className="py-2 font-mono text-xs">{q.quotation_number}</td>
+                        <td className="capitalize">{q.status}</td>
+                        <td className="text-right">Bs {money(q.total)}</td>
+                        <td>{matchingSale ? <span className="text-green-700 font-mono text-xs">{matchingSale.sale_number}</span> : <span className="text-[#5B6670]">—</span>}</td>
+                        <td className="text-right"><div className="flex justify-end gap-2">
+                          <button onClick={() => navigate(`/cotizaciones?ver=${q.id}`)} title="Ver / imprimir en Cotizaciones" className="text-[#1B3A6B]"><ExternalLink size={15} /></button>
+                          {!matchingSale && <button onClick={() => navigate(`/ventas?quotation=${q.id}`)} title="Convertir a venta" className="text-[#1B3A6B]"><ShoppingBag size={15} /></button>}
+                        </div></td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
               </div>
-              {quotationPreview.items.some(it => Number(it.unit_price) <= 0) && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2 mt-2">Uno o más ítems salieron con precio Bs 0.00 — probablemente se generó la cotización antes de cargar el costo/markup real. Corrige el costo del ítem en la pestaña "Ítems" y luego usa "Actualizar cotización" desde Cotizaciones (botón de arriba) para que los montos se recalculen.</div>}
-            </div>}
+            </>}
+          </div>
 
-            {!current.sale_id && !linkedSale && <button onClick={() => navigate(`/ventas?quotation=${current.quotation_id}`)} className="px-5 py-2.5 rounded-xl border text-[#1B3A6B] text-sm"><ShoppingBag size={15} className="inline mr-1" />Convertir a venta</button>}
-            {!current.sale_id && linkedSale && <div className="rounded-xl bg-green-50 border border-green-100 p-3 text-sm text-green-800 flex flex-wrap items-center justify-between gap-2">
-              <span>Se detectó la venta <b>{linkedSale.sale_number}</b> generada desde esta cotización.</span>
-              <button onClick={linkSaleToProject} className="text-[#1B3A6B] font-semibold">Vincular al proyecto</button>
-            </div>}
-            {current.sale_id && <div className="rounded-xl bg-[#F5F6F8] border p-3 text-sm flex flex-wrap items-center justify-between gap-2">
-              <span>Venta vinculada: <b>{linkedSale?.sale_number || "—"}</b>{linkedSale && <> · Total Bs {money(linkedSale.total)} · Saldo Bs {money(linkedSale.balance)}</>}</span>
-              <button onClick={() => navigate("/cobranza")} className="text-[#1B3A6B] font-semibold"><ExternalLink size={14} className="inline mr-1" />Ir a Cobranza</button>
-            </div>}
-          </div>}
+          <div className="bg-white rounded-2xl p-5 space-y-3">
+            <h3 className="font-semibold text-[#0F2647] text-sm">Ventas vinculadas al proyecto</h3>
+            {projectSales.length === 0 && <div className="text-sm italic text-[#5B6670] py-4">Este proyecto todavía no tiene ninguna venta vinculada.</div>}
+            {projectSales.length > 0 && <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead><tr className="text-left text-xs uppercase text-[#5B6670] border-b"><th className="py-2">N°</th><th>Estado</th><th className="text-right">Total</th><th className="text-right">Saldo</th><th className="text-right">Acciones</th></tr></thead>
+                  <tbody>
+                    {projectSales.map(s => <tr key={s.id} className="border-b">
+                      <td className="py-2 font-mono text-xs">{s.sale_number}</td>
+                      <td className="capitalize">{s.status}</td>
+                      <td className="text-right">Bs {money(s.total)}</td>
+                      <td className="text-right">Bs {money(s.balance)}</td>
+                      <td className="text-right"><button onClick={() => navigate(`/ventas?ver=${s.id}`)} className="text-[#1B3A6B] font-semibold text-xs"><ExternalLink size={14} className="inline mr-1" />Ir a la venta</button></td>
+                    </tr>)}
+                  </tbody>
+                </table>
+              </div>
+              <button onClick={() => navigate("/cobranza")} className="text-[#1B3A6B] font-semibold text-xs"><ExternalLink size={14} className="inline mr-1" />Ir a Cobranza</button>
+            </>}
+          </div>
+
+          <div className="bg-white rounded-2xl p-5 space-y-3">
+            <h3 className="font-semibold text-[#0F2647] text-sm">Vincular venta existente</h3>
+            <p className="text-xs text-[#5B6670]">Ventas del mismo cliente que todavía no pertenecen a ningún proyecto — útil si una venta se registró directo y en realidad corresponde a este proyecto.</p>
+            <input value={unlinkedSaleSearch} onChange={e => setUnlinkedSaleSearch(e.target.value)} placeholder="Filtrar por código de venta..." className="w-full border rounded-xl p-2.5 text-sm" />
+            <div className="divide-y max-h-56 overflow-auto">
+              {unlinkedSales.filter(s => !unlinkedSaleSearch.trim() || (s.sale_number || "").toLowerCase().includes(unlinkedSaleSearch.trim().toLowerCase())).map(s => (
+                <div key={s.id} className="py-2 flex items-center justify-between text-sm">
+                  <span className="font-mono">{s.sale_number} <span className="text-xs text-[#5B6670] capitalize">· {s.status}</span></span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-[#5B6670]">Bs {money(s.total)}</span>
+                    <button disabled={linkingSaleId === s.id} onClick={() => linkExistingSale(s.id)} className="text-xs font-semibold text-[#1B3A6B] border border-[#1B3A6B]/30 rounded-lg px-2 py-1 hover:bg-[#1B3A6B]/5 disabled:opacity-50">{linkingSaleId === s.id ? "Vinculando..." : "Vincular"}</button>
+                  </div>
+                </div>
+              ))}
+              {unlinkedSales.length === 0 && <div className="text-sm italic text-[#5B6670] py-4 text-center">No hay ventas sin proyecto para este cliente.</div>}
+            </div>
+          </div>
         </div>}
 
         {detailTab === "compras" && !loading && <div className="bg-white rounded-2xl p-5 space-y-4">
@@ -1483,7 +1537,9 @@ export function Proyectos() {
           </div>
           {profitability ? <div className="space-y-4">
             <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-              <StatCard label="Ventas" value={profitability.total_ventas} />
+              <StatCard label="Ventas (todas las entregas parciales)" value={profitability.total_ventas} />
+              <StatCard label="Cobrado" value={profitability.total_cobrado} />
+              <StatCard label="Saldo por cobrar" value={profitability.saldo_por_cobrar} />
               <StatCard label="Compras con factura" value={profitability.compras_con_factura} />
               <StatCard label="Compras sin factura" value={profitability.compras_sin_factura} />
               <StatCard label="Gastos" value={profitability.total_gastos} />
@@ -1508,27 +1564,30 @@ export function Proyectos() {
         </div>}
 
         {detailTab === "entrega" && !loading && <div className="space-y-4">
-          {!current.sale_id ? (
+          {projectSales.length === 0 ? (
             <div className="bg-white rounded-2xl p-8 text-center text-sm text-[#5B6670]">
-              La nota de entrega se genera automáticamente a partir de la nota de venta. Este proyecto todavía no tiene una venta generada.
+              La nota de entrega se genera automáticamente a partir de la nota de venta. Este proyecto todavía no tiene ninguna venta vinculada.
             </div>
-          ) : <div className="bg-white rounded-2xl p-5 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="font-semibold text-[#0F2647] text-sm">Notas de entrega de la venta {linkedSale?.sale_number || "—"}</h3>
-                <div className="text-xs text-[#5B6670]">Se emiten desde Ventas; acá puedes verlas e imprimirlas, sin precios.</div>
+          ) : projectSales.map(sale => {
+            const notes = projectDeliveryNotes.filter(dn => dn.sale_id === sale.id);
+            return <div key={sale.id} className="bg-white rounded-2xl p-5 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold text-[#0F2647] text-sm">Notas de entrega de la venta {sale.sale_number}</h3>
+                  <div className="text-xs text-[#5B6670]">Se emiten desde Ventas; acá puedes verlas e imprimirlas, sin precios.</div>
+                </div>
+                <button onClick={() => navigate(`/ventas?ver=${sale.id}`)} className="px-3 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><ShoppingBag size={14} className="inline mr-1" />Ir a la venta</button>
               </div>
-              <button onClick={() => navigate(`/ventas?ver=${current.sale_id}`)} className="px-3 py-2 rounded-xl bg-[#1B3A6B] text-white text-sm"><ShoppingBag size={14} className="inline mr-1" />Ir a la venta</button>
-            </div>
-            {projectDeliveryNotes.length === 0 && <div className="text-sm italic text-[#5B6670] py-4">Todavía no se emitió ninguna nota de entrega para esta venta.</div>}
-            {projectDeliveryNotes.map(dn => <div key={dn.id} className="flex items-center justify-between text-sm border-b py-2">
-              <span className="font-mono">{dn.delivery_number} · {formatDate(dn.delivery_date)}{dn.received_by ? ` · Recibió: ${dn.received_by}` : ""}</span>
-              <div className="flex gap-1">
-                <button title="Ver" onClick={() => viewProjectDeliveryNote(dn)} className="p-1.5 rounded border"><Eye size={14} /></button>
-                <button title="Imprimir" onClick={() => viewProjectDeliveryNote(dn, true)} className="p-1.5 rounded border"><Printer size={14} /></button>
-              </div>
-            </div>)}
-          </div>}
+              {notes.length === 0 && <div className="text-sm italic text-[#5B6670] py-4">Todavía no se emitió ninguna nota de entrega para esta venta.</div>}
+              {notes.map(dn => <div key={dn.id} className="flex items-center justify-between text-sm border-b py-2">
+                <span className="font-mono">{dn.delivery_number} · {formatDate(dn.delivery_date)}{dn.received_by ? ` · Recibió: ${dn.received_by}` : ""}</span>
+                <div className="flex gap-1">
+                  <button title="Ver" onClick={() => viewProjectDeliveryNote(dn, sale)} className="p-1.5 rounded border"><Eye size={14} /></button>
+                  <button title="Imprimir" onClick={() => viewProjectDeliveryNote(dn, sale, true)} className="p-1.5 rounded border"><Printer size={14} /></button>
+                </div>
+              </div>)}
+            </div>;
+          })}
 
           {viewingDeliveryNote && <div className="bg-white rounded-2xl p-8 max-w-4xl mx-auto print:p-0">
             <div className="overflow-x-auto">
@@ -1544,8 +1603,8 @@ export function Proyectos() {
                   <td colSpan={2} className="border border-black p-2 text-center">FECHA</td>
                 </tr>
                 <tr>
-                  <td colSpan={3} className="border border-black p-2 text-center">OBJETO: <b>{linkedSale?.subject || "—"}</b></td>
-                  <td className="border border-black p-2 text-center">{linkedSale?.purchase_order_number || "—"}</td>
+                  <td colSpan={3} className="border border-black p-2 text-center">OBJETO: <b>{viewingDeliverySale?.subject || "—"}</b></td>
+                  <td className="border border-black p-2 text-center">{viewingDeliverySale?.purchase_order_number || "—"}</td>
                   <td colSpan={2} className="border border-black p-2 text-center">{formatDate(viewingDeliveryNote.delivery_date)}</td>
                 </tr>
                 <tr className="font-bold">
@@ -1580,7 +1639,7 @@ export function Proyectos() {
             </div>
             {viewingDeliveryNote.notes && <div className="mt-4 text-xs print:mt-2"><b>Observaciones:</b> {viewingDeliveryNote.notes}</div>}
             <div className="mt-6 print:hidden flex flex-wrap gap-2 justify-end">
-              <button onClick={() => setViewingDeliveryNote(null)} className="px-5 py-2.5 rounded-xl border">Cerrar</button>
+              <button onClick={() => { setViewingDeliveryNote(null); setViewingDeliverySale(null); }} className="px-5 py-2.5 rounded-xl border">Cerrar</button>
               <button onClick={() => window.print()} className="px-5 py-2.5 rounded-xl bg-[#1B3A6B] text-white"><Printer size={16} className="inline mr-2" />Imprimir / PDF</button>
             </div>
           </div>}
